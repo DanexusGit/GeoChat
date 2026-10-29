@@ -1,0 +1,2524 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="default">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>GeoChat - Ultimate Edition</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'app-bg': 'var(--app-bg)', 'app-panel': 'var(--app-panel)',
+                        'app-input': 'var(--app-input)', 'app-accent': 'var(--app-accent)',
+                        'app-accent-hover': 'var(--app-accent)', 'app-text': 'var(--app-text)',
+                        'app-text-muted': 'var(--app-text-muted)', 'app-border': 'var(--app-border)',
+                        'app-message-me': 'var(--app-accent)', 'app-message-other': 'var(--app-input)'
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    
+    <style>
+        :root, [data-theme="default"] {
+            --app-bg: #0f172a; --app-panel: #1e293b; --app-input: #334155; 
+            --app-accent: #3b82f6; --app-text: #f8fafc;
+            --app-text-muted: #94a3b8; --app-border: #334155;
+        }
+        [data-theme="dracula"] {
+            --app-bg: #282a36; --app-panel: #44475a; --app-input: #6272a4;
+            --app-accent: #bd93f9; --app-text: #f8f8f2;
+            --app-text-muted: #8be9fd; --app-border: #6272a4;
+        }
+        [data-theme="light"] {
+            --app-bg: #f3f4f6; --app-panel: #ffffff; --app-input: #e5e7eb;
+            --app-accent: #10b981; --app-text: #1f2937;
+            --app-text-muted: #6b7280; --app-border: #d1d5db;
+        }
+        [data-theme="ocean"] {
+            --app-bg: #062c33; --app-panel: #0a3d47; --app-input: #115e6b;
+            --app-accent: #22d3ee; --app-text: #e6fbff;
+            --app-text-muted: #7dd3d8; --app-border: #115e6b;
+        }
+        [data-theme="sunset"] {
+            --app-bg: #2b1120; --app-panel: #3d1830; --app-input: #5c2440;
+            --app-accent: #fb7185; --app-text: #fff1f2;
+            --app-text-muted: #f0a8bb; --app-border: #5c2440;
+        }
+        [data-theme="forest"] {
+            --app-bg: #0f1f14; --app-panel: #17301f; --app-input: #244530;
+            --app-accent: #4ade80; --app-text: #ecfdf3;
+            --app-text-muted: #86c99a; --app-border: #244530;
+        }
+        [data-theme="oled"] {
+            --app-bg: #000000; --app-panel: #0a0a0a; --app-input: #1a1a1a;
+            --app-accent: #a78bfa; --app-text: #ffffff;
+            --app-text-muted: #808080; --app-border: #1f1f1f;
+        }
+        [data-theme="rose"] {
+            --app-bg: #fff0f3; --app-panel: #ffffff; --app-input: #ffe1e8;
+            --app-accent: #e11d48; --app-text: #3f0d18;
+            --app-text-muted: #9d5a6a; --app-border: #ffc9d4;
+        }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        .message-enter { animation: slideIn 0.2s ease-out forwards; }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(10px) scale(0.98); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        
+        .typing-dot { animation: typing 1.4s infinite ease-in-out both; }
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes typing { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+        
+        audio { height: 35px; outline: none; }
+        audio::-webkit-media-controls-panel { background-color: rgba(255, 255, 255, 0.8); }
+
+        /* Wallpapers do chat */
+        #messages-container.wp-dots { background-image: radial-gradient(var(--app-border) 1px, transparent 1px); background-size: 18px 18px; }
+        #messages-container.wp-grid { background-image: linear-gradient(var(--app-border) 1px, transparent 1px), linear-gradient(90deg, var(--app-border) 1px, transparent 1px); background-size: 24px 24px; }
+        #messages-container.wp-diagonal { background-image: repeating-linear-gradient(45deg, var(--app-panel) 0 12px, var(--app-bg) 12px 24px); }
+        #messages-container.wp-none { background-image: none; }
+
+        /* Tamanho de fonte */
+        [data-fontsize="sm"] #messages-container { font-size: 12.5px; }
+        [data-fontsize="md"] #messages-container { font-size: 15px; }
+        [data-fontsize="lg"] #messages-container { font-size: 17.5px; }
+
+        /* Estilo de balão */
+        [data-bubble="square"] .msg-bubble { border-radius: 6px !important; }
+        [data-bubble="round"] .msg-bubble { border-radius: 1.25rem !important; }
+        [data-bubble="pill"] .msg-bubble { border-radius: 999px !important; }
+
+        .draw-tool-btn.active { outline: 2px solid var(--app-accent); background-color: var(--app-accent) !important; filter: brightness(1.3); }
+
+        /* Fontes */
+        [data-font="rounded"] { font-family: 'Comic Sans MS', 'Baloo 2', sans-serif; }
+        [data-font="mono"] { font-family: 'Courier New', monospace; }
+        [data-font="serif"] { font-family: Georgia, 'Times New Roman', serif; }
+
+        /* ===== Sistema de modais animados ===== */
+        .modal-overlay { opacity: 0; transition: opacity .22s ease; }
+        .modal-overlay.is-open { opacity: 1; }
+        .modal-card { transform: translateY(14px) scale(.97); opacity: 0; transition: transform .28s cubic-bezier(.22,1,.36,1), opacity .22s ease; }
+        .modal-overlay.is-open .modal-card { transform: translateY(0) scale(1); opacity: 1; }
+
+        /* Blobs decorativos animados do login */
+        .login-blob { position: absolute; border-radius: 9999px; filter: blur(60px); opacity: .35; animation: floatBlob 12s ease-in-out infinite; }
+        @keyframes floatBlob { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(20px,-25px) scale(1.15); } }
+
+        /* Entrada em lista escalonada */
+        .list-item-enter { animation: listIn .32s ease both; }
+        @keyframes listIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+
+        /* Botões com resposta tátil */
+        .tap-btn { transition: transform .12s ease, filter .15s ease, background-color .15s ease; touch-action: manipulation; }
+        .tap-btn:active { transform: scale(.92); }
+
+        .settings-tab-btn.active { color: var(--app-accent); }
+        .wallpaper-swatch-active { border-color: var(--app-accent) !important; }
+
+        /* Indicador de abas animado */
+        #settings-tab-indicator { transition: transform .28s cubic-bezier(.22,1,.36,1); }
+        .settings-tab-panel { animation: tabFade .22s ease both; }
+        @keyframes tabFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Wallpapers pré-definidos (100% CSS, sem depender de internet) */
+        .wpz-aurora { background: linear-gradient(135deg,#0f172a,#312e81 45%,#7c3aed 80%,#0f172a); }
+        .wpz-sunset { background: linear-gradient(135deg,#7f1d1d,#c2410c 40%,#f59e0b 75%,#7f1d1d); }
+        .wpz-ocean { background: linear-gradient(160deg,#022c33,#0e7490 50%,#22d3ee 100%); }
+        .wpz-forest { background: linear-gradient(150deg,#0f1f14,#166534 55%,#4ade80 100%); }
+        .wpz-candy { background: linear-gradient(140deg,#831843,#db2777 45%,#f472b6 85%); }
+        .wpz-mono { background: linear-gradient(160deg,#111111,#333333 60%,#111111); }
+        .wpz-bokeh { background-color:#0b1120; background-image: radial-gradient(circle at 15% 25%, rgba(59,130,246,.45) 0, transparent 22%), radial-gradient(circle at 80% 20%, rgba(236,72,153,.4) 0, transparent 20%), radial-gradient(circle at 30% 80%, rgba(16,185,129,.4) 0, transparent 24%), radial-gradient(circle at 75% 75%, rgba(245,158,11,.35) 0, transparent 20%); }
+        .wpz-nightsky { background-color:#02040a; background-image: radial-gradient(1px 1px at 20% 30%, #fff 100%, transparent), radial-gradient(1px 1px at 70% 60%, #fff 100%, transparent), radial-gradient(1px 1px at 40% 80%, #fff 100%, transparent), radial-gradient(1.5px 1.5px at 85% 15%, #fff 100%, transparent), radial-gradient(1px 1px at 55% 40%, #fff 100%, transparent), radial-gradient(1px 1px at 10% 65%, #fff 100%, transparent), linear-gradient(180deg,#02040a,#0b1330); background-size: 100% 100%; }
+        [class^="wpz-"] { background-size: cover; background-position: center; }
+        #messages-container.wp-custom { background-size: cover; background-position: center; background-repeat: no-repeat; }
+
+        @media (prefers-reduced-motion: reduce) {
+            .login-blob, .message-enter, .list-item-enter, .settings-tab-panel { animation: none !important; }
+            .modal-overlay, .modal-card, .tap-btn { transition: none !important; }
+        }
+
+        /* ===== Player de Música ===== */
+        #music-panel { transform: translateY(12px) scale(.95); opacity: 0; transition: transform .25s cubic-bezier(.22,1,.36,1), opacity .2s ease; pointer-events: none; }
+        #music-panel.is-open { transform: translateY(0) scale(1); opacity: 1; pointer-events: auto; }
+        .music-bar { width: 4px; height: 6px; border-radius: 2px; background-color: var(--app-accent); transition: height .12s ease; }
+        #music-bubble-icon.spinning { display: inline-block; animation: spinDisc 3s linear infinite; }
+        @keyframes spinDisc { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .music-playlist-item.playing { background-color: var(--app-input); border-left: 3px solid var(--app-accent); }
+        #music-player.dragging #music-bubble { cursor: grabbing; }
+        #music-player.dragging { transition: none !important; }
+        #music-player { transition: left .15s ease, top .15s ease; }
+        @media (prefers-reduced-motion: reduce) { #music-bubble-icon.spinning { animation: none !important; } }
+
+        /* ===================================================================
+           RESPONSIVIDADE — a interface se ajusta ao dispositivo/resolução
+           =================================================================== */
+
+        /* Alternância sidebar/chat no mobile: 100% via CSS, então redimensionar a janela nunca deixa o layout preso */
+        @media (max-width: 767px) {
+            body.mobile-view-chat #app-sidebar { display: none; }
+            body.mobile-view-chat #app-chat-area { display: flex; }
+        }
+
+        /* Altura real da tela em mobile (evita corte causado pela barra de
+           endereço do navegador, que o "100vh" clássico não considera) */
+        html, body { height: 100%; }
+        body.h-screen { height: 100dvh; }
+
+        /* Áreas seguras (notch/ilha dinâmica/barra de gestos) */
+        #incoming-call-banner { top: max(1rem, env(safe-area-inset-top)); }
+        #active-call-bar { bottom: max(1rem, env(safe-area-inset-bottom)); left: max(1rem, env(safe-area-inset-left)); }
+        #music-player { bottom: max(1rem, env(safe-area-inset-bottom)); right: max(1rem, env(safe-area-inset-right)); }
+        #login-screen { padding-top: max(1rem, env(safe-area-inset-top)); padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+        #chat-input-area { padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); }
+
+        /* Telas muito pequenas (celulares compactos, <400px) */
+        @media (max-width: 400px) {
+            #tab-appearance .grid-cols-4, #tab-wallpaper .grid-cols-4 { grid-template-columns: repeat(3, minmax(0,1fr)); }
+            #call-peer-name, #call-timer { max-width: 70px; }
+            #active-call-bar { padding: 0.4rem 0.6rem; gap: 0.4rem; }
+            #active-call-bar button { width: 1.9rem; height: 1.9rem; font-size: 0.8rem; }
+            .settings-tab-btn { font-size: 10px; padding: 0.5rem 0.15rem; }
+            #music-panel { width: 78vw; }
+        }
+
+        /* Celulares em paisagem / telas curtas (altura reduzida) */
+        @media (max-height: 480px) {
+            #login-screen .login-blob { display: none; }
+            #settings-modal .modal-card, #group-modal .modal-card { max-height: 92vh; }
+            #tab-appearance, #tab-wallpaper, #tab-profile { max-height: 40vh; }
+        }
+
+        /* Tablets: ajustes finos de espaçamento */
+        @media (min-width: 640px) and (max-width: 1023px) {
+            #app-sidebar { width: 320px; }
+        }
+
+        /* Telas grandes / monitores ultrawide: evita esticar demais o conteúdo,
+           como fazem versões web de apps de chat conhecidos */
+        @media (min-width: 1440px) {
+            #app-sidebar { width: 400px; }
+            #messages-inner { max-width: 46rem; }
+            #chat-input-area > div:last-child { max-width: 46rem; margin: 0 auto; }
+            #chat-header > div:first-child { max-width: 46rem; }
+        }
+        @media (min-width: 1920px) {
+            #messages-inner { max-width: 52rem; }
+            #chat-input-area > div:last-child { max-width: 52rem; }
+        }
+
+        /* Dispositivos sem hover (touch): aumenta um pouco a área de toque dos
+           ícones de ação das mensagens, que dependem de hover no desktop */
+        @media (hover: none) {
+            .msg-bubble .group-hover\:flex { display: flex !important; opacity: .55; }
+        }
+    </style>
+</head>
+<body class="bg-app-bg text-app-text h-screen flex overflow-hidden font-sans transition-colors duration-300">
+
+    <!-- Tela de Login & Customização -->
+    <div id="login-screen" class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4 overflow-hidden">
+        <div class="login-blob w-72 h-72 bg-blue-500 -top-10 -left-10"></div>
+        <div class="login-blob w-80 h-80 bg-purple-500 bottom-0 right-0" style="animation-delay: -4s"></div>
+        <div class="login-blob w-56 h-56 bg-pink-500 top-1/3 right-1/4" style="animation-delay: -8s"></div>
+        <div class="bg-app-panel/90 backdrop-blur-xl p-6 rounded-2xl w-full max-w-lg border border-app-border max-h-[95vh] overflow-y-auto no-scrollbar shadow-2xl relative z-10">
+            <h1 class="text-4xl font-black text-center text-app-accent mb-1 tracking-tighter" style="color: var(--app-accent)">GeoChat</h1>
+            <p class="text-center text-app-text-muted text-sm mb-6">Conecte-se com o mundo ao seu redor</p>
+            
+            <div class="flex flex-col items-center mb-6">
+                <div class="relative w-32 h-32 rounded-full bg-app-input overflow-hidden border-4 shadow-lg flex items-center justify-center mb-4 transition-transform hover:scale-105" style="border-color: var(--app-accent)">
+                    <img id="avatar-preview" src="" class="w-full h-full object-cover">
+                </div>
+                <div class="flex gap-2 w-full justify-center">
+                    <button onclick="randomizeAvatar()" class="tap-btn bg-app-input hover:bg-app-bg text-app-text text-xs px-4 py-2 rounded-lg transition font-bold">🎲 Sortear</button>
+                    <label class="bg-app-input hover:bg-app-bg text-app-text text-xs px-4 py-2 rounded-lg transition font-bold cursor-pointer flex items-center">
+                        💻 Enviar Foto
+                        <input type="file" accept="image/*" class="hidden" onchange="handleProfilePhotoUpload(event)">
+                    </label>
+                </div>
+            </div>
+
+            <div class="bg-app-bg p-4 rounded-xl border border-app-border mb-6">
+                <p class="text-app-text-muted mb-3 text-center text-[10px] uppercase tracking-widest font-bold">Crie seu Avatar</p>
+                <div class="grid grid-cols-2 gap-2 md:gap-3">
+                    <select id="av-skin" onchange="updateCustomAvatar()" class="bg-app-input rounded p-1.5 text-xs text-app-text outline-none">
+                        <option value="">Pele: Padrão</option><option value="ffdbb4">Pálida</option><option value="f8d25c">Amarela</option><option value="edb98a">Clara</option><option value="d08b5b">Parda</option><option value="ae5d29">Morena</option><option value="614335">Escura</option>
+                    </select>
+                    <select id="av-top" onchange="updateCustomAvatar()" class="bg-app-input rounded p-1.5 text-xs text-app-text outline-none">
+                        <option value="shortFlat">Cabelo: Curto</option><option value="shortCurly">Cacheado</option><option value="shortWaved">Ondulado Curto</option><option value="longButNotTooLong">Longo</option><option value="straight02">Liso</option><option value="dreads">Dreads</option><option value="dreads02">Dreads Longos</option><option value="bald">Careca</option><option value="hat">Chapéu</option><option value="turban">Turbante</option><option value="winterHat1">Gorro</option>
+                    </select>
+                    <select id="av-hair-color" onchange="updateCustomAvatar()" class="bg-app-input rounded p-1.5 text-xs text-app-text outline-none">
+                        <option value="2c1b18">Cor Cabelo: Preto</option><option value="4a3123">Castanho</option><option value="d6b370">Loiro</option><option value="a55728">Ruivo</option><option value="fc909f">Rosa</option><option value="b58143">Loiro Escuro</option><option value="724133">Mogno</option><option value="e8e1e1">Platinado</option>
+                    </select>
+                    <select id="av-clothes" onchange="updateCustomAvatar()" class="bg-app-input rounded p-1.5 text-xs text-app-text outline-none">
+                        <option value="hoodie">Roupa: Moletom</option><option value="shirtCrewNeck">Camiseta Gola Redonda</option><option value="shirtVNeck">Camiseta Gola V</option><option value="graphicShirt">Camiseta Estampada</option><option value="blazerAndShirt">Blazer e Camisa</option><option value="blazerAndSweater">Blazer e Suéter</option><option value="overall">Macacão</option>
+                    </select>
+                    <select id="av-facial-hair" onchange="updateCustomAvatar()" class="bg-app-input rounded p-1.5 text-xs text-app-text outline-none">
+                        <option value="">Barba: Nenhuma</option><option value="beardMedium">Barba Média</option><option value="beardLight">Barba Rala</option><option value="beardMajestic">Barba Lenhador</option><option value="moustacheFancy">Bigode Clássico</option><option value="moustacheMagnum">Bigode Cheio</option>
+                    </select>
+                    <select id="av-facial-hair-color" onchange="updateCustomAvatar()" class="bg-app-input rounded p-1.5 text-xs text-app-text outline-none">
+                        <option value="2c1b18">Cor Barba: Preto</option><option value="4a3123">Castanho</option><option value="d6b370">Loiro</option><option value="a55728">Ruivo</option><option value="e8e1e1">Grisalho</option>
+                    </select>
+                    <select id="av-eyes" onchange="updateCustomAvatar()" class="bg-app-input rounded p-1.5 text-xs text-app-text outline-none">
+                        <option value="">Óculos: Nenhum</option><option value="prescription01">De Grau Fino</option><option value="prescription02">De Grau Grosso</option><option value="round">Redondos</option><option value="sunglasses">Escuros</option><option value="wayfarers">Wayfarer</option>
+                    </select>
+                    <select id="av-clothes-color" onchange="updateCustomAvatar()" class="bg-app-input rounded p-1.5 text-xs text-app-text outline-none">
+                        <option value="3b82f6">Cor Roupa: Azul</option><option value="10b981">Verde</option><option value="ef4444">Vermelho</option><option value="1f2937">Preto</option><option value="f8fafc">Branco</option><option value="f59e0b">Laranja</option><option value="8b5cf6">Roxo</option><option value="ec4899">Rosa</option>
+                    </select>
+                    <select id="av-eye-expr" onchange="updateCustomAvatar()" class="bg-app-input rounded p-1.5 text-xs text-app-text outline-none">
+                        <option value="default">Olhar: Padrão</option><option value="happy">Feliz</option><option value="wink">Piscando</option><option value="squint">Semicerrado</option><option value="surprised">Surpreso</option><option value="hearts">Apaixonado</option>
+                    </select>
+                    <select id="av-eyebrows" onchange="updateCustomAvatar()" class="bg-app-input rounded p-1.5 text-xs text-app-text outline-none">
+                        <option value="default">Sobrancelha: Padrão</option><option value="raisedExcited">Animada</option><option value="angry">Séria</option><option value="sadConcerned">Preocupada</option><option value="unibrow">Única</option>
+                    </select>
+                    <select id="av-mouth" onchange="updateCustomAvatar()" class="bg-app-input rounded p-1.5 text-xs text-app-text outline-none">
+                        <option value="default">Boca: Padrão</option><option value="smile">Sorriso</option><option value="twinkle">Sorriso Sutil</option><option value="serious">Séria</option><option value="tongue">Língua de Fora</option><option value="disbelief">Descrença</option>
+                    </select>
+                    <select id="av-bg" onchange="updateCustomAvatar()" class="bg-app-input rounded p-1.5 text-xs text-app-text outline-none col-span-2">
+                        <option value="">Fundo: Transparente</option><option value="b6e3f4">Azul Claro</option><option value="c0aede">Lilás</option><option value="d1d4f9">Lavanda</option><option value="ffd5dc">Rosa Claro</option><option value="ffdfbf">Pêssego</option><option value="c8f0d8">Verde Claro</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="space-y-3 mb-6">
+                <input type="text" id="username" placeholder="Seu apelido..." class="w-full bg-app-input border border-app-border rounded-xl px-4 py-3 text-app-text focus:outline-none font-bold" style="border-color: var(--app-border); outline-color: var(--app-accent);" onkeypress="if(event.key === 'Enter') startApp()">
+                <input type="text" id="userstatus" placeholder="Seu recado (ex: Ocupado, Feliz...)" class="w-full bg-app-input border border-app-border rounded-xl px-4 py-2 text-app-text text-sm focus:outline-none" style="border-color: var(--app-border); outline-color: var(--app-accent);" onkeypress="if(event.key === 'Enter') startApp()">
+            </div>
+            
+            <button onclick="startApp()" class="tap-btn w-full text-white font-black py-4 px-4 rounded-xl transition-all hover:scale-[1.02] shadow-lg text-lg uppercase tracking-wide hover:brightness-110" style="background-color: var(--app-accent)">Iniciar Conexão</button>
+            <p id="login-status" class="text-sm text-center mt-4 font-bold hidden animate-pulse" style="color: var(--app-accent)">Sincronizando...</p>
+        </div>
+    </div>
+
+    <!-- App Principal -->
+    <div class="w-full h-full opacity-0 pointer-events-none transition-opacity duration-500 flex" id="main-app">
+        
+        <!-- Sidebar -->
+        <div id="app-sidebar" class="flex flex-col w-full md:w-[380px] h-full bg-app-panel border-r border-app-border flex-shrink-0 z-20">
+            <div class="p-4 border-b border-app-border flex items-center justify-between gap-3 shadow-sm bg-app-panel">
+                <div class="flex items-center gap-3 cursor-pointer hover:bg-app-input/50 p-1.5 -ml-1.5 rounded-lg transition" onclick="openSettingsModal()" title="Abrir Configurações">
+                    <div class="relative">
+                        <img id="my-avatar" src="" class="w-12 h-12 rounded-full border-2 object-cover bg-app-input" style="border-color: var(--app-accent)">
+                        <div class="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-app-panel rounded-full"></div>
+                    </div>
+                    <div class="flex flex-col">
+                        <h2 id="my-name" class="font-bold text-app-text leading-tight truncate w-32">Nome</h2>
+                        <span id="my-status" class="text-xs text-app-text-muted truncate w-32">Status</span>
+                    </div>
+                </div>
+                <div class="flex gap-2 shrink-0">
+                    <button onclick="openBrowserModal()" class="tap-btn w-10 h-10 rounded-full bg-app-input hover:brightness-110 transition flex items-center justify-center text-lg" style="color: var(--app-accent)" title="Navegador">🌐</button>
+                    <button onclick="toggleMusicPanel()" class="tap-btn w-10 h-10 rounded-full bg-app-input hover:brightness-110 transition flex items-center justify-center text-lg" style="color: var(--app-accent)" title="Música">🎵</button>
+                    <button onclick="openGroupModal()" class="tap-btn w-10 h-10 rounded-full bg-app-input hover:brightness-110 transition flex items-center justify-center text-lg" style="color: var(--app-accent)" title="Novo Grupo">➕</button>
+                </div>
+            </div>
+
+            <div class="p-2 bg-app-bg">
+                <input type="text" id="search-chat" placeholder="Pesquisar conversas..." class="w-full bg-app-input text-app-text text-sm rounded-lg px-3 py-2 outline-none" oninput="updateUI()">
+            </div>
+            <div id="users-list" class="flex-1 overflow-y-auto no-scrollbar p-2 space-y-1"></div>
+        </div>
+
+        <!-- Chat Area -->
+        <div id="app-chat-area" class="hidden md:flex flex-col flex-1 bg-app-bg relative h-full">
+            <div id="chat-header" class="h-16 border-b border-app-border bg-app-panel hidden items-center px-4 shadow-sm shrink-0 z-10 justify-between">
+                <div class="flex items-center gap-3">
+                    <button onclick="backToSidebar()" class="md:hidden font-bold text-2xl hover:scale-110 p-1" style="color: var(--app-accent)">←</button>
+                    <img id="active-user-avatar" src="" class="w-10 h-10 rounded-full object-cover bg-white">
+                    <div>
+                        <h2 id="active-user-name" class="font-bold text-app-text leading-tight">Nome</h2>
+                        <p id="active-user-distance" class="text-[11px]" style="color: var(--app-accent)">Status</p>
+                    </div>
+                </div>
+                <button id="call-btn" onclick="startVoiceCall()" class="tap-btn w-10 h-10 rounded-full bg-app-input hover:brightness-110 flex items-center justify-center text-lg" style="color: var(--app-accent)" title="Chamada de voz">📞</button>
+            </div>
+
+            <div id="empty-state" class="absolute inset-0 flex flex-col items-center justify-center text-app-text-muted z-10 p-4 text-center bg-app-bg">
+                <div class="w-48 h-48 mb-6 opacity-50 bg-[url('https://api.dicebear.com/7.x/shapes/svg?seed=chat')] bg-no-repeat bg-center"></div>
+                <h3 class="text-2xl font-bold mb-2">Bem-vindo ao GeoChat</h3>
+                <p class="text-sm max-w-md">Selecione uma conversa na lateral ou crie um novo grupo para começar.</p>
+            </div>
+
+            <div id="messages-container" class="flex-1 overflow-y-auto p-4 md:p-6 no-scrollbar hidden bg-app-bg pb-4">
+                <div id="messages-inner" class="space-y-3 max-w-3xl mx-auto w-full"></div>
+            </div>
+
+            <div id="typing-indicator" class="hidden px-6 pb-2 text-xs text-app-text-muted italic flex items-center gap-2">
+                <span>Alguém está digitando</span>
+                <div class="flex gap-1"><div class="w-1.5 h-1.5 bg-app-text-muted rounded-full typing-dot"></div><div class="w-1.5 h-1.5 bg-app-text-muted rounded-full typing-dot"></div><div class="w-1.5 h-1.5 bg-app-text-muted rounded-full typing-dot"></div></div>
+            </div>
+
+            <div id="chat-input-area" class="p-3 md:p-4 bg-app-panel border-t border-app-border hidden shrink-0">
+                <div id="reply-preview" class="hidden items-center justify-between gap-2 bg-app-input rounded-lg px-3 py-2 mb-2 border-l-4" style="border-color: var(--app-accent)">
+                    <div class="overflow-hidden">
+                        <p class="text-xs font-bold" style="color: var(--app-accent)">Respondendo a <span id="reply-preview-name"></span></p>
+                        <p id="reply-preview-snippet" class="text-xs text-app-text-muted truncate"></p>
+                    </div>
+                    <button onclick="cancelReply()" class="tap-btn text-app-text-muted hover:text-red-500 font-bold px-2">✕</button>
+                </div>
+                <div class="flex items-center gap-1 bg-app-input rounded-2xl px-2 py-1 md:py-2">
+                    <button onclick="document.getElementById('file-input').click()" class="tap-btn p-2 text-app-text-muted hover:text-white transition rounded-full hover:bg-app-panel" title="Anexar Arquivo">📎</button>
+                    <input type="file" id="file-input" class="hidden" onchange="sendFile(this)">
+                    
+                    <button onclick="openDrawingModal()" class="tap-btn p-2 text-app-text-muted hover:text-white transition rounded-full hover:bg-app-panel" title="Desenhar">🎨</button>
+                    <button onclick="sendLocation()" class="tap-btn p-2 text-app-text-muted hover:text-white transition rounded-full hover:bg-app-panel" title="Enviar Localização">📍</button>
+                    
+                    <input type="text" id="message-input" placeholder="Digite uma mensagem..." class="flex-1 bg-transparent text-app-text focus:outline-none text-sm md:text-base px-2 h-10 w-full" onkeypress="handleTyping(); if(event.key === 'Enter') sendTextMessage()">
+                    
+                    <button id="record-btn" onclick="toggleRecording()" class="tap-btn p-2 text-app-text-muted hover:text-white transition rounded-full hover:bg-app-panel" title="Gravar Áudio">🎤</button>
+                    <button onclick="sendTextMessage()" class="tap-btn text-white rounded-full w-10 h-10 flex justify-center items-center font-bold transition shrink-0 shadow-md hover:brightness-110 ml-1" style="background-color: var(--app-accent)">➤</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modais -->
+    
+    <!-- Quadro de Desenho -->
+    <div id="drawing-modal" class="modal-overlay fixed inset-0 bg-black/90 z-50 flex-col items-center justify-center p-4 backdrop-blur-sm" style="display: none;">
+        <div class="modal-card bg-app-panel rounded-xl w-full max-w-3xl mx-auto flex flex-col shadow-2xl border border-app-border overflow-hidden h-full max-h-[92vh]">
+            <div class="flex items-center justify-between p-3 bg-app-bg border-b border-app-border shrink-0">
+                <h3 class="font-bold text-app-text">Quadro de Desenho</h3>
+                <div class="flex items-center gap-2">
+                    <button onclick="undoDraw()" title="Desfazer" class="w-9 h-9 flex items-center justify-center bg-app-input rounded-lg hover:brightness-110">↩️</button>
+                    <button onclick="redoDraw()" title="Refazer" class="w-9 h-9 flex items-center justify-center bg-app-input rounded-lg hover:brightness-110">↪️</button>
+                    <button onclick="downloadDrawing()" title="Baixar PNG" class="w-9 h-9 flex items-center justify-center bg-app-input rounded-lg hover:brightness-110">💾</button>
+                    <button onclick="closeDrawingModal()" class="text-[#ef4444] font-bold px-3 py-1.5 bg-app-input rounded-lg hover:bg-red-900/30">✕</button>
+                </div>
+            </div>
+
+            <!-- Barra de ferramentas -->
+            <div id="draw-toolbar" class="flex flex-wrap items-center gap-1 p-2 bg-app-bg border-b border-app-border shrink-0">
+                <button data-tool="brush" onclick="setTool('brush')" title="Pincel" class="draw-tool-btn w-9 h-9 flex items-center justify-center rounded-lg bg-app-input">🖌️</button>
+                <button data-tool="marker" onclick="setTool('marker')" title="Marcador (traço reto nas pontas)" class="draw-tool-btn w-9 h-9 flex items-center justify-center rounded-lg bg-app-input">🖊️</button>
+                <button data-tool="eraser" onclick="setTool('eraser')" title="Borracha" class="draw-tool-btn w-9 h-9 flex items-center justify-center rounded-lg bg-app-input">🧹</button>
+                <button data-tool="line" onclick="setTool('line')" title="Linha reta" class="draw-tool-btn w-9 h-9 flex items-center justify-center rounded-lg bg-app-input">📏</button>
+                <button data-tool="rect" onclick="setTool('rect')" title="Retângulo" class="draw-tool-btn w-9 h-9 flex items-center justify-center rounded-lg bg-app-input">▭</button>
+                <button data-tool="circle" onclick="setTool('circle')" title="Círculo" class="draw-tool-btn w-9 h-9 flex items-center justify-center rounded-lg bg-app-input">⭕</button>
+                <button data-tool="arrow" onclick="setTool('arrow')" title="Seta" class="draw-tool-btn w-9 h-9 flex items-center justify-center rounded-lg bg-app-input">➡️</button>
+                <button data-tool="text" onclick="setTool('text')" title="Texto" class="draw-tool-btn w-9 h-9 flex items-center justify-center rounded-lg bg-app-input">🔤</button>
+                <button data-tool="fill" onclick="setTool('fill')" title="Balde de tinta" class="draw-tool-btn w-9 h-9 flex items-center justify-center rounded-lg bg-app-input">🪣</button>
+                <label class="flex items-center gap-1 ml-2 text-xs text-app-text-muted">
+                    <input type="checkbox" id="draw-shape-fill"> Preencher forma
+                </label>
+            </div>
+
+            <div class="flex-1 bg-white relative overflow-hidden">
+                <canvas id="draw-canvas" class="absolute inset-0 w-full h-full cursor-crosshair touch-none"></canvas>
+            </div>
+
+            <div class="p-3 bg-app-bg border-t border-app-border flex gap-3 justify-between items-center flex-wrap shrink-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                    <input type="color" id="draw-color" value="#3b82f6" class="w-10 h-10 rounded cursor-pointer border-0 bg-transparent">
+                    <div class="flex gap-1">
+                        <button onclick="pickColor('#000000')" class="w-6 h-6 rounded-full bg-black border border-app-border"></button>
+                        <button onclick="pickColor('#ffffff')" class="w-6 h-6 rounded-full bg-white border border-app-border"></button>
+                        <button onclick="pickColor('#ef4444')" class="w-6 h-6 rounded-full bg-red-500 border border-app-border"></button>
+                        <button onclick="pickColor('#f59e0b')" class="w-6 h-6 rounded-full bg-amber-500 border border-app-border"></button>
+                        <button onclick="pickColor('#3b82f6')" class="w-6 h-6 rounded-full bg-blue-500 border border-app-border"></button>
+                        <button onclick="pickColor('#10b981')" class="w-6 h-6 rounded-full bg-emerald-500 border border-app-border"></button>
+                        <button onclick="pickColor('#8b5cf6')" class="w-6 h-6 rounded-full bg-violet-500 border border-app-border"></button>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <input type="range" id="draw-size" min="1" max="40" value="3" class="w-24 accent-blue-500">
+                        <span id="draw-size-label" class="text-xs text-app-text-muted w-6">3px</span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <span class="text-xs text-app-text-muted">Opac.</span>
+                        <input type="range" id="draw-opacity" min="10" max="100" value="100" class="w-16 accent-blue-500">
+                    </div>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="clearCanvas()" class="px-4 py-2 bg-app-input text-app-text hover:bg-app-border rounded-lg text-sm font-bold transition">Limpar</button>
+                    <button onclick="sendDrawing()" class="px-5 py-2 text-white font-bold rounded-lg transition hover:brightness-110" style="background-color: var(--app-accent)">Enviar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Configurações -->
+    <div id="settings-modal" class="modal-overlay fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 backdrop-blur-sm" style="display: none;">
+        <div class="modal-card bg-app-panel p-6 rounded-2xl w-full max-w-md border border-app-border shadow-2xl">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold text-app-text">Configurações</h3>
+                <button onclick="closeSettingsModal()" class="tap-btn text-app-text-muted hover:text-red-500 font-bold text-xl">✕</button>
+            </div>
+
+            <!-- Abas -->
+            <div class="relative flex border-b border-app-border mb-5">
+                <button onclick="switchSettingsTab('appearance')" data-tab="appearance" class="settings-tab-btn tap-btn flex-1 text-xs font-bold py-2.5 text-app-text-muted">🎨 Aparência</button>
+                <button onclick="switchSettingsTab('wallpaper')" data-tab="wallpaper" class="settings-tab-btn tap-btn flex-1 text-xs font-bold py-2.5 text-app-text-muted">🖼️ Papel de Parede</button>
+                <button onclick="switchSettingsTab('profile')" data-tab="profile" class="settings-tab-btn tap-btn flex-1 text-xs font-bold py-2.5 text-app-text-muted">👤 Perfil</button>
+                <div id="settings-tab-indicator" class="absolute bottom-0 left-0 h-0.5 w-1/3" style="background-color: var(--app-accent)"></div>
+            </div>
+
+            <div class="max-h-[58vh] overflow-y-auto no-scrollbar pr-1">
+                <!-- Aba Aparência -->
+                <div id="tab-appearance" class="settings-tab-panel space-y-5">
+                    <div>
+                        <label class="text-xs text-app-text-muted uppercase font-bold mb-2 block">Tema do App</label>
+                        <div class="grid grid-cols-4 gap-2">
+                            <button onclick="changeAppTheme('default')" class="tap-btn bg-[#0f172a] text-white border border-[#334155] rounded p-2 text-[10px] hover:border-blue-500">Escuro</button>
+                            <button onclick="changeAppTheme('dracula')" class="tap-btn bg-[#282a36] text-[#f8f8f2] border border-[#6272a4] rounded p-2 text-[10px] hover:border-purple-500">Dracula</button>
+                            <button onclick="changeAppTheme('light')" class="tap-btn bg-[#f3f4f6] text-black border border-[#d1d5db] rounded p-2 text-[10px] hover:border-green-500">Claro</button>
+                            <button onclick="changeAppTheme('ocean')" class="tap-btn bg-[#062c33] text-[#e6fbff] border border-[#115e6b] rounded p-2 text-[10px] hover:border-cyan-400">Oceano</button>
+                            <button onclick="changeAppTheme('sunset')" class="tap-btn bg-[#2b1120] text-[#fff1f2] border border-[#5c2440] rounded p-2 text-[10px] hover:border-rose-400">Pôr do Sol</button>
+                            <button onclick="changeAppTheme('forest')" class="tap-btn bg-[#0f1f14] text-[#ecfdf3] border border-[#244530] rounded p-2 text-[10px] hover:border-green-400">Floresta</button>
+                            <button onclick="changeAppTheme('oled')" class="tap-btn bg-black text-white border border-[#1f1f1f] rounded p-2 text-[10px] hover:border-violet-400">OLED</button>
+                            <button onclick="changeAppTheme('rose')" class="tap-btn bg-[#fff0f3] text-[#3f0d18] border border-[#ffc9d4] rounded p-2 text-[10px] hover:border-rose-500">Rosé</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-xs text-app-text-muted uppercase font-bold mb-2 block">Cor de Destaque</label>
+                        <div class="flex gap-2 justify-between flex-wrap">
+                            <button onclick="changeAccentColor('#3b82f6')" class="tap-btn w-8 h-8 rounded-full bg-[#3b82f6] border-2 border-transparent focus:border-white"></button>
+                            <button onclick="changeAccentColor('#10b981')" class="tap-btn w-8 h-8 rounded-full bg-[#10b981] border-2 border-transparent focus:border-white"></button>
+                            <button onclick="changeAccentColor('#8b5cf6')" class="tap-btn w-8 h-8 rounded-full bg-[#8b5cf6] border-2 border-transparent focus:border-white"></button>
+                            <button onclick="changeAccentColor('#ef4444')" class="tap-btn w-8 h-8 rounded-full bg-[#ef4444] border-2 border-transparent focus:border-white"></button>
+                            <button onclick="changeAccentColor('#f59e0b')" class="tap-btn w-8 h-8 rounded-full bg-[#f59e0b] border-2 border-transparent focus:border-white"></button>
+                            <button onclick="changeAccentColor('#ec4899')" class="tap-btn w-8 h-8 rounded-full bg-[#ec4899] border-2 border-transparent focus:border-white"></button>
+                            <button onclick="changeAccentColor('#14b8a6')" class="tap-btn w-8 h-8 rounded-full bg-[#14b8a6] border-2 border-transparent focus:border-white"></button>
+                            <button onclick="changeAccentColor('#eab308')" class="tap-btn w-8 h-8 rounded-full bg-[#eab308] border-2 border-transparent focus:border-white"></button>
+                            <input type="color" id="accent-custom" onchange="changeAccentColor(this.value)" value="#3b82f6" class="w-8 h-8 rounded-full border-2 border-app-border cursor-pointer bg-transparent p-0" title="Cor personalizada">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="text-xs text-app-text-muted uppercase font-bold mb-2 block">Tam. da Fonte</label>
+                            <select onchange="changeFontSize(this.value)" class="w-full bg-app-input rounded-lg p-2 text-xs text-app-text outline-none">
+                                <option value="sm">Pequena</option><option value="md" selected>Média</option><option value="lg">Grande</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-xs text-app-text-muted uppercase font-bold mb-2 block">Estilo do Balão</label>
+                            <select onchange="changeBubbleStyle(this.value)" class="w-full bg-app-input rounded-lg p-2 text-xs text-app-text outline-none">
+                                <option value="round" selected>Arredondado</option><option value="square">Quadrado</option><option value="pill">Pílula</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-xs text-app-text-muted uppercase font-bold mb-2 block">Fonte do App</label>
+                        <select onchange="changeAppFont(this.value)" class="w-full bg-app-input rounded-lg p-2 text-xs text-app-text outline-none">
+                            <option value="default" selected>Padrão</option><option value="rounded">Arredondada</option><option value="mono">Monoespaçada</option><option value="serif">Serifada</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Aba Papel de Parede -->
+                <div id="tab-wallpaper" class="settings-tab-panel space-y-4 hidden">
+                    <div>
+                        <label class="text-xs text-app-text-muted uppercase font-bold mb-2 block">Do seu computador</label>
+                        <label class="tap-btn flex items-center justify-center gap-2 w-full bg-app-input border-2 border-dashed border-app-border rounded-xl px-3 py-4 text-sm text-app-text cursor-pointer hover:brightness-110">
+                            💻 <span>Enviar imagem de fundo</span>
+                            <input type="file" accept="image/*" class="hidden" onchange="handleWallpaperUpload(event)">
+                        </label>
+                        <p id="wallpaper-upload-status" class="text-[11px] text-app-text-muted mt-1"></p>
+                    </div>
+                    <div>
+                        <label class="text-xs text-app-text-muted uppercase font-bold mb-2 block">Predefinidos</label>
+                        <div class="grid grid-cols-4 gap-2">
+                            <button onclick="changeWallpaper('wp-none')" class="tap-btn h-14 rounded-lg bg-app-input flex items-center justify-center text-[9px] text-app-text-muted border-2 border-transparent" title="Liso">Liso</button>
+                            <button onclick="changeWallpaper('wp-dots')" class="tap-btn h-14 rounded-lg bg-app-input flex items-center justify-center text-[9px] text-app-text-muted border-2 border-transparent" title="Pontos">••••</button>
+                            <button onclick="changeWallpaper('wp-grid')" class="tap-btn h-14 rounded-lg bg-app-input flex items-center justify-center text-[9px] text-app-text-muted border-2 border-transparent" title="Grade">▦▦</button>
+                            <button onclick="changeWallpaper('wp-diagonal')" class="tap-btn h-14 rounded-lg bg-app-input flex items-center justify-center text-[9px] text-app-text-muted border-2 border-transparent" title="Diagonal">╱╱╱</button>
+                            <button onclick="changeWallpaper('wpz-aurora')" class="tap-btn h-14 rounded-lg wpz-aurora border-2 border-transparent" title="Aurora"></button>
+                            <button onclick="changeWallpaper('wpz-sunset')" class="tap-btn h-14 rounded-lg wpz-sunset border-2 border-transparent" title="Pôr do Sol"></button>
+                            <button onclick="changeWallpaper('wpz-ocean')" class="tap-btn h-14 rounded-lg wpz-ocean border-2 border-transparent" title="Oceano"></button>
+                            <button onclick="changeWallpaper('wpz-forest')" class="tap-btn h-14 rounded-lg wpz-forest border-2 border-transparent" title="Floresta"></button>
+                            <button onclick="changeWallpaper('wpz-candy')" class="tap-btn h-14 rounded-lg wpz-candy border-2 border-transparent" title="Doce"></button>
+                            <button onclick="changeWallpaper('wpz-mono')" class="tap-btn h-14 rounded-lg wpz-mono border-2 border-transparent" title="Mono"></button>
+                            <button onclick="changeWallpaper('wpz-bokeh')" class="tap-btn h-14 rounded-lg wpz-bokeh border-2 border-transparent" title="Bokeh"></button>
+                            <button onclick="changeWallpaper('wpz-nightsky')" class="tap-btn h-14 rounded-lg wpz-nightsky border-2 border-transparent" title="Céu Noturno"></button>
+                        </div>
+                    </div>
+                    <button onclick="removeWallpaper()" class="tap-btn w-full text-xs text-app-text-muted underline">Remover papel de parede</button>
+                </div>
+
+                <!-- Aba Perfil -->
+                <div id="tab-profile" class="settings-tab-panel space-y-3 hidden">
+                    <label class="text-xs text-app-text-muted uppercase font-bold mb-1 block">Atualizar Perfil</label>
+                    <input type="text" id="settings-name" placeholder="Novo nome..." class="w-full bg-app-input border border-app-border rounded-lg px-3 py-2 text-app-text mb-2 text-sm focus:outline-none">
+                    <input type="text" id="settings-status" placeholder="Novo status..." class="w-full bg-app-input border border-app-border rounded-lg px-3 py-2 text-app-text text-sm focus:outline-none">
+                </div>
+            </div>
+            <button onclick="saveSettings()" class="tap-btn w-full text-white font-bold py-3 mt-5 rounded-xl transition hover:brightness-110" style="background-color: var(--app-accent)">Salvar e Fechar</button>
+        </div>
+    </div>
+
+    <!-- Navegador Interno -->
+    <div id="browser-modal" class="modal-overlay fixed inset-0 bg-black/90 z-50 flex flex-col p-2 md:p-6 backdrop-blur-sm" style="display: none;">
+        <div class="modal-card bg-app-panel rounded-xl w-full h-full flex flex-col shadow-2xl border border-app-border overflow-hidden">
+            <div class="flex items-center justify-between p-2 bg-app-bg border-b border-app-border gap-2 flex-wrap">
+                <div class="flex items-center gap-1">
+                    <button onclick="browserBack()" title="Voltar" class="w-9 h-9 shrink-0 flex items-center justify-center bg-app-input rounded-lg hover:brightness-110">◀</button>
+                    <button onclick="browserForward()" title="Avançar" class="w-9 h-9 shrink-0 flex items-center justify-center bg-app-input rounded-lg hover:brightness-110">▶</button>
+                    <button onclick="browserReload()" title="Recarregar" class="w-9 h-9 shrink-0 flex items-center justify-center bg-app-input rounded-lg hover:brightness-110">🔄</button>
+                    <button onclick="browserHome()" title="Início" class="w-9 h-9 shrink-0 flex items-center justify-center bg-app-input rounded-lg hover:brightness-110">🏠</button>
+                </div>
+                <div class="flex-1 flex items-center bg-app-input rounded-lg px-3 py-1.5 border border-app-border min-w-[140px]">
+                    <input type="text" id="browser-url-input" placeholder="Pesquisar ou digitar URL..." class="w-full bg-transparent text-sm text-app-text focus:outline-none" onkeypress="if(event.key === 'Enter') navigateBrowser()">
+                </div>
+                <select id="browser-engine" class="bg-app-input text-app-text text-xs rounded-lg px-2 py-2 outline-none border border-app-border">
+                    <option value="bing">Bing</option>
+                    <option value="ddg">DuckDuckGo</option>
+                    <option value="wiki">Wikipédia</option>
+                </select>
+                <button onclick="navigateBrowser()" class="px-4 py-1.5 rounded-lg text-white font-bold text-sm shrink-0" style="background-color: var(--app-accent)">Ir</button>
+                <button onclick="openInNewTab()" title="Abrir em nova aba real" class="w-9 h-9 shrink-0 flex items-center justify-center bg-app-input rounded-lg hover:brightness-110">↗️</button>
+                <button onclick="closeBrowserModal()" class="text-[#ef4444] font-bold px-3 py-1.5 bg-app-input rounded-lg hover:bg-red-900/30 shrink-0">✕</button>
+            </div>
+            <div class="flex items-center gap-2 px-2 py-1.5 bg-app-bg border-b border-app-border overflow-x-auto no-scrollbar text-xs shrink-0">
+                <button id="browser-mode-btn" onclick="toggleBrowserMode()" class="px-2.5 py-1 rounded-full font-bold shrink-0 text-white" style="background-color: var(--app-accent)" title="No modo compatibilidade, a página é buscada por um proxy e injetada sem iframe direto, driblando bloqueios de vários sites">🛡️ Compatibilidade</button>
+                <span class="text-app-text-muted shrink-0 mr-1">Atalhos:</span>
+                <button onclick="quickNav('https://www.bing.com')" class="px-2 py-1 bg-app-input rounded-full shrink-0 hover:brightness-110">Bing</button>
+                <button onclick="quickNav('https://html.duckduckgo.com/html/')" class="px-2 py-1 bg-app-input rounded-full shrink-0 hover:brightness-110">DuckDuckGo</button>
+                <button onclick="quickNav('https://pt.wikipedia.org')" class="px-2 py-1 bg-app-input rounded-full shrink-0 hover:brightness-110">Wikipédia</button>
+                <button onclick="quickNav('https://developer.mozilla.org')" class="px-2 py-1 bg-app-input rounded-full shrink-0 hover:brightness-110">MDN Docs</button>
+                <button onclick="quickNav('https://archive.org')" class="px-2 py-1 bg-app-input rounded-full shrink-0 hover:brightness-110">Internet Archive</button>
+                <button onclick="quickNav('https://www.reddit.com')" class="px-2 py-1 bg-app-input rounded-full shrink-0 hover:brightness-110">Reddit</button>
+            </div>
+            <div id="browser-warning" class="hidden items-center gap-2 px-3 py-1.5 bg-yellow-500/10 border-b border-yellow-600/30 text-yellow-500 text-xs shrink-0"></div>
+            <div class="flex-1 relative bg-white">
+                <div id="browser-spinner" class="hidden absolute inset-0 bg-white/80 z-10 items-center justify-center flex-col gap-2">
+                    <div class="w-8 h-8 border-4 rounded-full animate-spin" style="border-color: var(--app-border); border-top-color: var(--app-accent)"></div>
+                    <span id="browser-spinner-text" class="text-xs text-gray-500">Carregando via proxy...</span>
+                </div>
+                <iframe id="browser-frame" class="w-full h-full border-0" sandbox="allow-scripts allow-forms allow-popups allow-same-origin"></iframe>
+            </div>
+        </div>
+    </div>
+
+    <!-- Grupos -->
+    <div id="group-modal" class="modal-overlay fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm" style="display: none;">
+        <div class="modal-card bg-app-panel p-6 rounded-2xl w-full max-w-md border border-app-border">
+            <h3 class="text-xl font-bold text-app-text mb-4">Criar Novo Grupo</h3>
+            <input type="text" id="group-name-input" placeholder="Nome do Grupo" class="w-full bg-app-input border border-app-border rounded-lg px-4 py-3 text-app-text focus:outline-none mb-4">
+            <div id="group-members-list" class="max-h-48 overflow-y-auto space-y-1 mb-4 bg-app-bg p-2 rounded-lg border border-app-border"></div>
+            <div class="flex gap-2">
+                <button onclick="closeGroupModal()" class="flex-1 bg-app-input py-2.5 rounded-lg text-app-text tap-btn">Cancelar</button>
+                <button onclick="createGroup()" class="flex-1 text-white font-bold py-2.5 rounded-lg" style="background-color: var(--app-accent)">Criar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const BROKER_URL = 'wss://broker.emqx.io:8084/mqtt';
+        const APP_TOPIC = 'geochat_super_v10_pro'; 
+        const MAX_PAYLOAD = 10 * 1024 * 1024; // 10MB para testes com imagens mais pesadas
+
+        let client;
+        let myProfile = { id: 'u_' + Math.random().toString(36).substr(2, 9), name: '', status: '', avatar: '', lastSeen: Date.now() };
+        let users = new Map(); 
+        let groups = {}; 
+        let chats = {}; 
+        let activeChatId = null; 
+        let currentSeed = Math.random().toString(36).substring(7);
+        let typingTimeout;
+
+        // ===== Helpers genéricos de modal animado =====
+        function openModal(id, displayType) {
+            const el = document.getElementById(id);
+            el.style.display = displayType || 'flex';
+            requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('is-open')));
+        }
+        function closeModal(id) {
+            const el = document.getElementById(id);
+            el.classList.remove('is-open');
+            setTimeout(() => { el.style.display = 'none'; }, 220);
+        }
+
+        // Váriaveis Persistentes de Áudio e Localização
+        let globalAudioStream = null;
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+        
+        let globalLocationWatcher = null;
+        let lastKnownLocation = null;
+
+        // --- SISTEMA DE DESENHO (otimizado: Pointer Events + HiDPI + ferramentas) ---
+        const canvas = document.getElementById('draw-canvas');
+        const ctx = canvas.getContext('2d');
+        let isDrawing = false;
+        let currentTool = 'brush';
+        let startX = 0, startY = 0;
+        let lastX = 0, lastY = 0;
+        let snapshotData = null; // usado para preview de formas
+        let dpr = Math.max(window.devicePixelRatio || 1, 1);
+        let historyStack = [];
+        let redoStack = [];
+
+        function cssSize() { return { w: canvas.parentElement.clientWidth, h: canvas.parentElement.clientHeight }; }
+
+        function resizeCanvas() {
+            const { w, h } = cssSize();
+            // Preserva o desenho atual ao redimensionar (ex: rotação de tela)
+            const prev = (canvas.width > 0 && canvas.height > 0) ? canvas.toDataURL() : null;
+            dpr = Math.max(window.devicePixelRatio || 1, 1);
+            canvas.width = Math.floor(w * dpr);
+            canvas.height = Math.floor(h * dpr);
+            canvas.style.width = w + 'px';
+            canvas.style.height = h + 'px';
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, w, h);
+            if (prev) {
+                const img = new Image();
+                img.onload = () => ctx.drawImage(img, 0, 0, w, h);
+                img.src = prev;
+            } else {
+                pushHistory(true);
+            }
+        }
+        window.addEventListener('resize', () => { if (document.getElementById('drawing-modal').style.display === 'flex') resizeCanvas(); });
+
+        function getPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        }
+
+        function pushHistory(reset) {
+            if (reset) { historyStack = [canvas.toDataURL()]; redoStack = []; return; }
+            historyStack.push(canvas.toDataURL());
+            if (historyStack.length > 30) historyStack.shift();
+            redoStack = [];
+        }
+
+        function restoreFromDataURL(url) {
+            const img = new Image();
+            const { w, h } = cssSize();
+            img.onload = () => { ctx.clearRect(0, 0, w, h); ctx.drawImage(img, 0, 0, w, h); };
+            img.src = url;
+        }
+
+        function undoDraw() {
+            if (historyStack.length <= 1) return;
+            redoStack.push(historyStack.pop());
+            restoreFromDataURL(historyStack[historyStack.length - 1]);
+        }
+        function redoDraw() {
+            if (!redoStack.length) return;
+            const url = redoStack.pop();
+            historyStack.push(url);
+            restoreFromDataURL(url);
+        }
+
+        function setTool(tool) {
+            currentTool = tool;
+            document.querySelectorAll('.draw-tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
+            canvas.style.cursor = tool === 'eraser' ? 'cell' : (tool === 'text' ? 'text' : 'crosshair');
+        }
+
+        function pickColor(hex) { document.getElementById('draw-color').value = hex; }
+
+        document.getElementById('draw-size').addEventListener('input', function() {
+            document.getElementById('draw-size-label').innerText = this.value + 'px';
+        });
+
+        function applyStrokeStyle() {
+            const size = parseFloat(document.getElementById('draw-size').value);
+            const opacity = parseFloat(document.getElementById('draw-opacity').value) / 100;
+            ctx.lineWidth = size;
+            ctx.lineCap = currentTool === 'marker' ? 'square' : 'round';
+            ctx.lineJoin = 'round';
+            ctx.globalAlpha = opacity;
+            if (currentTool === 'eraser') {
+                ctx.globalCompositeOperation = 'destination-out';
+                ctx.strokeStyle = 'rgba(0,0,0,1)';
+            } else {
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.strokeStyle = document.getElementById('draw-color').value;
+            }
+        }
+
+        function midpoint(a, b) { return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; }
+        let pointBuffer = [];
+
+        function drawShapePreview(x, y) {
+            if (!snapshotData) return;
+            restoreFromDataURL(snapshotData);
+            applyStrokeStyle();
+            const fill = document.getElementById('draw-shape-fill').checked;
+            ctx.beginPath();
+            if (currentTool === 'line' || currentTool === 'arrow') {
+                ctx.moveTo(startX, startY); ctx.lineTo(x, y); ctx.stroke();
+                if (currentTool === 'arrow') drawArrowHead(startX, startY, x, y);
+            } else if (currentTool === 'rect') {
+                const w = x - startX, h = y - startY;
+                if (fill) { ctx.fillStyle = ctx.strokeStyle; ctx.fillRect(startX, startY, w, h); }
+                ctx.strokeRect(startX, startY, w, h);
+            } else if (currentTool === 'circle') {
+                const r = Math.hypot(x - startX, y - startY);
+                ctx.arc(startX, startY, r, 0, Math.PI * 2);
+                if (fill) { ctx.fillStyle = ctx.strokeStyle; ctx.fill(); }
+                ctx.stroke();
+            }
+        }
+
+        function drawArrowHead(fromX, fromY, toX, toY) {
+            const angle = Math.atan2(toY - fromY, toX - fromX);
+            const headLen = Math.max(10, ctx.lineWidth * 3);
+            ctx.beginPath();
+            ctx.moveTo(toX, toY);
+            ctx.lineTo(toX - headLen * Math.cos(angle - Math.PI / 6), toY - headLen * Math.sin(angle - Math.PI / 6));
+            ctx.moveTo(toX, toY);
+            ctx.lineTo(toX - headLen * Math.cos(angle + Math.PI / 6), toY - headLen * Math.sin(angle + Math.PI / 6));
+            ctx.stroke();
+        }
+
+        function floodFill(startXpx, startYpx, fillColorHex) {
+            const { w, h } = cssSize();
+            const imgData = ctx.getImageData(0, 0, Math.floor(w * dpr), Math.floor(h * dpr));
+            const data = imgData.data;
+            const cw = imgData.width, ch = imgData.height;
+            const sx = Math.floor(startXpx * dpr), sy = Math.floor(startYpx * dpr);
+            if (sx < 0 || sy < 0 || sx >= cw || sy >= ch) return;
+
+            const r = parseInt(fillColorHex.slice(1,3),16), g = parseInt(fillColorHex.slice(3,5),16), b = parseInt(fillColorHex.slice(5,7),16);
+            const idx0 = (sy * cw + sx) * 4;
+            const targetR = data[idx0], targetG = data[idx0+1], targetB = data[idx0+2], targetA = data[idx0+3];
+            if (targetR === r && targetG === g && targetB === b && targetA === 255) return;
+
+            const tolerance = 32;
+            const matches = (i) => Math.abs(data[i]-targetR) <= tolerance && Math.abs(data[i+1]-targetG) <= tolerance && Math.abs(data[i+2]-targetB) <= tolerance && Math.abs(data[i+3]-targetA) <= tolerance;
+
+            const stack = [[sx, sy]];
+            const visited = new Uint8Array(cw * ch);
+            let iterations = 0;
+            const maxIter = cw * ch;
+            while (stack.length && iterations < maxIter) {
+                iterations++;
+                const [x, y] = stack.pop();
+                if (x < 0 || y < 0 || x >= cw || y >= ch) continue;
+                const vIdx = y * cw + x;
+                if (visited[vIdx]) continue;
+                const i = vIdx * 4;
+                if (!matches(i)) continue;
+                visited[vIdx] = 1;
+                data[i] = r; data[i+1] = g; data[i+2] = b; data[i+3] = 255;
+                stack.push([x+1,y],[x-1,y],[x,y+1],[x,y-1]);
+            }
+            ctx.putImageData(imgData, 0, 0);
+        }
+
+        function pointerDown(e) {
+            if (e.pointerType === 'mouse' && e.button !== 0) return;
+            const { x, y } = getPos(e);
+            startX = x; startY = y; lastX = x; lastY = y;
+
+            if (currentTool === 'text') {
+                const txt = prompt('Digite o texto:');
+                if (txt) {
+                    applyStrokeStyle();
+                    const size = Math.max(12, parseFloat(document.getElementById('draw-size').value) * 4);
+                    ctx.font = `${size}px sans-serif`;
+                    ctx.fillStyle = document.getElementById('draw-color').value;
+                    ctx.globalAlpha = parseFloat(document.getElementById('draw-opacity').value) / 100;
+                    ctx.globalCompositeOperation = 'source-over';
+                    ctx.fillText(txt, x, y);
+                    pushHistory();
+                }
+                return;
+            }
+            if (currentTool === 'fill') {
+                pushHistory();
+                floodFill(x, y, document.getElementById('draw-color').value);
+                return;
+            }
+
+            isDrawing = true;
+            canvas.setPointerCapture(e.pointerId);
+
+            if (currentTool === 'brush' || currentTool === 'marker' || currentTool === 'eraser') {
+                pointBuffer = [{ x, y }];
+                applyStrokeStyle();
+                ctx.beginPath();
+                ctx.arc(x, y, ctx.lineWidth / 2, 0, Math.PI * 2);
+                ctx.fillStyle = ctx.strokeStyle;
+                if (currentTool !== 'eraser') ctx.fill();
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+            } else {
+                snapshotData = canvas.toDataURL();
+            }
+        }
+
+        function pointerMove(e) {
+            if (!isDrawing) return;
+            const { x, y } = getPos(e);
+
+            if (currentTool === 'brush' || currentTool === 'marker' || currentTool === 'eraser') {
+                pointBuffer.push({ x, y });
+                if (pointBuffer.length > 3) pointBuffer.shift();
+                if (pointBuffer.length >= 3) {
+                    const [p0, p1, p2] = pointBuffer;
+                    const m1 = midpoint(p0, p1), m2 = midpoint(p1, p2);
+                    ctx.quadraticCurveTo(p1.x, p1.y, m2.x, m2.y);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.moveTo(m2.x, m2.y);
+                }
+            } else {
+                drawShapePreview(x, y);
+            }
+            lastX = x; lastY = y;
+        }
+
+        function pointerUp(e) {
+            if (!isDrawing) return;
+            isDrawing = false;
+            ctx.beginPath();
+            ctx.globalAlpha = 1;
+            ctx.globalCompositeOperation = 'source-over';
+            snapshotData = null;
+            pushHistory();
+        }
+
+        canvas.addEventListener('pointerdown', pointerDown);
+        canvas.addEventListener('pointermove', pointerMove);
+        window.addEventListener('pointerup', pointerUp);
+        canvas.addEventListener('pointerleave', (e) => { if (isDrawing && (currentTool==='brush'||currentTool==='marker'||currentTool==='eraser')) pointerUp(e); });
+
+        function openDrawingModal() {
+            openModal('drawing-modal');
+            setTool('brush');
+            setTimeout(resizeCanvas, 60);
+        }
+        function closeDrawingModal() { closeModal('drawing-modal'); }
+        function clearCanvas() {
+            const { w, h } = cssSize();
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, w, h);
+            pushHistory();
+        }
+
+        function downloadDrawing() {
+            const a = document.createElement('a');
+            a.href = canvas.toDataURL('image/png');
+            a.download = 'geochat-desenho-' + Date.now() + '.png';
+            a.click();
+        }
+
+        function sendDrawing() {
+            const data = canvas.toDataURL('image/png');
+            sendPayload('image', data);
+            closeDrawingModal();
+            clearCanvas();
+        }
+        // --------------------------
+
+        // ÁUDIO PERSISTENTE
+        async function toggleRecording() {
+            const btn = document.getElementById('record-btn');
+            const input = document.getElementById('message-input');
+            
+            if (!isRecording) {
+                try {
+                    // Mantém a permissão salva na aba para não perguntar de novo
+                    if (!globalAudioStream) {
+                        input.placeholder = "Solicitando microfone...";
+                        globalAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    }
+                    
+                    mediaRecorder = new MediaRecorder(globalAudioStream);
+                    audioChunks = [];
+                    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+                    
+                    mediaRecorder.onstop = () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            if (e.target.result.length > MAX_PAYLOAD) alert("Áudio muito longo! Gravação excedeu 10MB.");
+                            else sendPayload('audio', e.target.result);
+                        };
+                        reader.readAsDataURL(audioBlob);
+                    };
+                    
+                    mediaRecorder.start();
+                    isRecording = true;
+                    btn.classList.add('text-red-500', 'animate-pulse');
+                    input.placeholder = "Gravando áudio... (Clique no mic para parar)";
+                } catch (err) {
+                    alert('Erro ao acessar o microfone. Verifique as permissões.');
+                    input.placeholder = "Digite uma mensagem...";
+                }
+            } else {
+                mediaRecorder.stop();
+                isRecording = false;
+                btn.classList.remove('text-red-500', 'animate-pulse');
+                input.placeholder = "Digite uma mensagem...";
+            }
+        }
+
+        // LOCALIZAÇÃO PERSISTENTE
+        function sendLocation() {
+            if (!navigator.geolocation) return alert('Geolocalização não suportada.');
+            const input = document.getElementById('message-input');
+            const originalPh = input.placeholder;
+
+            // Se já temos a localização recente, envia imediatamente sem carregar
+            if (lastKnownLocation) {
+                sendPayload('location', lastKnownLocation);
+                return;
+            }
+
+            input.placeholder = "Buscando localização pela primeira vez...";
+            
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    lastKnownLocation = `${pos.coords.latitude},${pos.coords.longitude}`;
+                    sendPayload('location', lastKnownLocation);
+                    input.placeholder = originalPh;
+                    
+                    // Inicia o observador silencioso para envios futuros instantâneos
+                    if (!globalLocationWatcher) {
+                        globalLocationWatcher = navigator.geolocation.watchPosition(p => {
+                            lastKnownLocation = `${p.coords.latitude},${p.coords.longitude}`;
+                        }, null, { enableHighAccuracy: true });
+                    }
+                },
+                (err) => {
+                    alert('Erro ao obter localização. Permita o acesso no navegador.');
+                    input.placeholder = originalPh;
+                },
+                { enableHighAccuracy: true, timeout: 10000 }
+            );
+        }
+
+        // AVATAR E CONFIGS
+        function openSettingsModal() { 
+            document.getElementById('settings-name').value = myProfile.name;
+            document.getElementById('settings-status').value = myProfile.status;
+            openModal('settings-modal');
+            switchSettingsTab('appearance');
+        }
+        function closeSettingsModal() { closeModal('settings-modal'); }
+        
+        function changeAppTheme(theme) { document.documentElement.setAttribute('data-theme', theme); savePrefs({theme}); }
+        function changeAccentColor(color) { document.documentElement.style.setProperty('--app-accent', color); document.getElementById('accent-custom').value = color; savePrefs({accent: color}); }
+
+        const WALLPAPER_CLASSES = ['wp-none','wp-dots','wp-grid','wp-diagonal','wp-custom','wpz-aurora','wpz-sunset','wpz-ocean','wpz-forest','wpz-candy','wpz-mono','wpz-bokeh','wpz-nightsky'];
+
+        function changeWallpaper(cls) {
+            const el = document.getElementById('messages-container');
+            el.classList.remove(...WALLPAPER_CLASSES);
+            el.style.backgroundImage = '';
+            el.classList.add(cls);
+            highlightWallpaperSwatch(cls);
+            savePrefs({wallpaper: cls});
+        }
+
+        function highlightWallpaperSwatch(cls) {
+            document.querySelectorAll('#tab-wallpaper button.tap-btn[onclick^="changeWallpaper"]').forEach(b => {
+                b.classList.toggle('wallpaper-swatch-active', b.getAttribute('onclick') === `changeWallpaper('${cls}')`);
+            });
+        }
+
+        function handleWallpaperUpload(e) {
+            const file = e.target.files[0]; if (!file) return;
+            const statusEl = document.getElementById('wallpaper-upload-status');
+            statusEl.innerText = 'Otimizando imagem...';
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                const img = new Image();
+                img.onload = () => {
+                    // Redimensiona/comprime no cliente para caber com folga no armazenamento local
+                    const maxW = 1600;
+                    const scale = Math.min(1, maxW / img.width);
+                    const c = document.createElement('canvas');
+                    c.width = Math.round(img.width * scale);
+                    c.height = Math.round(img.height * scale);
+                    const cctx = c.getContext('2d');
+                    cctx.drawImage(img, 0, 0, c.width, c.height);
+                    const dataUrl = c.toDataURL('image/jpeg', 0.75);
+                    try {
+                        localStorage.setItem('geochat_custom_wallpaper', dataUrl);
+                        applyCustomWallpaper(dataUrl);
+                        changeWallpaper('wp-custom');
+                        statusEl.innerText = '✅ Papel de parede aplicado!';
+                    } catch (err) {
+                        statusEl.innerText = '⚠️ Imagem grande demais para salvar. Tente uma menor.';
+                    }
+                };
+                img.src = ev.target.result;
+            };
+            reader.readAsDataURL(file);
+            e.target.value = '';
+        }
+
+        function applyCustomWallpaper(dataUrl) {
+            document.getElementById('messages-container').style.backgroundImage = `url(${dataUrl})`;
+        }
+
+        function removeWallpaper() {
+            try { localStorage.removeItem('geochat_custom_wallpaper'); } catch(e) {}
+            changeWallpaper('wp-none');
+            document.getElementById('wallpaper-upload-status').innerText = '';
+        }
+
+        function changeFontSize(size) { document.documentElement.setAttribute('data-fontsize', size); savePrefs({fontsize: size}); }
+        function changeBubbleStyle(style) { document.documentElement.setAttribute('data-bubble', style); savePrefs({bubble: style}); }
+        function changeAppFont(font) { document.documentElement.setAttribute('data-font', font); savePrefs({font: font}); }
+
+        function switchSettingsTab(tab) {
+            const tabs = ['appearance', 'wallpaper', 'profile'];
+            const idx = tabs.indexOf(tab);
+            tabs.forEach(t => {
+                document.getElementById('tab-' + t).classList.toggle('hidden', t !== tab);
+                document.querySelector(`.settings-tab-btn[data-tab="${t}"]`).classList.toggle('active', t === tab);
+            });
+            document.getElementById('settings-tab-indicator').style.transform = `translateX(${idx * 100}%)`;
+        }
+
+        function savePrefs(p) {
+            try {
+                const cur = JSON.parse(localStorage.getItem('geochat_prefs') || '{}');
+                localStorage.setItem('geochat_prefs', JSON.stringify({...cur, ...p}));
+            } catch(e) {}
+        }
+        function loadPrefs() {
+            try {
+                const p = JSON.parse(localStorage.getItem('geochat_prefs') || '{}');
+                if(p.theme) document.documentElement.setAttribute('data-theme', p.theme);
+                if(p.accent) document.documentElement.style.setProperty('--app-accent', p.accent);
+                if(p.wallpaper === 'wp-custom') {
+                    const saved = localStorage.getItem('geochat_custom_wallpaper');
+                    if (saved) { applyCustomWallpaper(saved); changeWallpaper('wp-custom'); }
+                } else if(p.wallpaper) changeWallpaper(p.wallpaper);
+                if(p.fontsize) document.documentElement.setAttribute('data-fontsize', p.fontsize);
+                if(p.bubble) document.documentElement.setAttribute('data-bubble', p.bubble);
+                if(p.font) document.documentElement.setAttribute('data-font', p.font);
+            } catch(e) {}
+        }
+        loadPrefs();
+        
+        function saveSettings() {
+            const n = document.getElementById('settings-name').value.trim();
+            const s = document.getElementById('settings-status').value.trim();
+            if(n) {
+                myProfile.name = n;
+                myProfile.status = s || myProfile.status;
+                document.getElementById('my-name').innerText = myProfile.name;
+                document.getElementById('my-status').innerText = myProfile.status;
+                client.publish(`${APP_TOPIC}/discovery`, JSON.stringify(myProfile));
+            }
+            closeSettingsModal();
+        }
+
+        function randomizeAvatar() { currentSeed = Math.random().toString(36).substring(7); updateCustomAvatar(); }
+        
+        function updateCustomAvatar() {
+            const skin = document.getElementById('av-skin').value;
+            const top = document.getElementById('av-top').value;
+            const hair = document.getElementById('av-hair-color').value;
+            const clothes = document.getElementById('av-clothes').value;
+            const clothesColor = document.getElementById('av-clothes-color').value;
+            const beard = document.getElementById('av-facial-hair').value;
+            const beardColor = document.getElementById('av-facial-hair-color').value;
+            const eyes = document.getElementById('av-eyes').value;
+            const eyeExpr = document.getElementById('av-eye-expr').value;
+            const eyebrows = document.getElementById('av-eyebrows').value;
+            const mouth = document.getElementById('av-mouth').value;
+            const bg = document.getElementById('av-bg').value;
+
+            let url = `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentSeed}&top=${top}&clothing=${clothes}&clothingColor=${clothesColor}&eyes=${eyeExpr}&eyebrows=${eyebrows}&mouth=${mouth}&backgroundColor=${bg || 'transparent'}`;
+            if(skin) url += `&skinColor=${skin}`;
+            if(hair) url += `&hairColor=${hair}`;
+            
+            if(beard) url += `&facialHair=${beard}&facialHairProbability=100&facialHairColor=${beardColor}`;
+            else url += `&facialHairProbability=0`;
+
+            if(eyes) url += `&accessories=${eyes}&accessoriesProbability=100`;
+            else url += `&accessoriesProbability=0`;
+
+            document.getElementById('avatar-preview').src = url;
+        }
+        window.onload = updateCustomAvatar;
+
+        function handleProfilePhotoUpload(e) {
+            const file = e.target.files[0]; if(!file) return;
+            const r = new FileReader(); r.onload = ev => document.getElementById('avatar-preview').src = ev.target.result;
+            r.readAsDataURL(file);
+        }
+
+        function startApp() {
+            const n = document.getElementById('username').value.trim();
+            const s = document.getElementById('userstatus').value.trim();
+            if (!n) return alert('Digite um apelido!');
+            myProfile.name = n; myProfile.status = s || 'Disponível'; myProfile.avatar = document.getElementById('avatar-preview').src;
+            
+            document.getElementById('login-status').classList.remove('hidden');
+            connectMQTT();
+        }
+
+        function connectMQTT() {
+            client = mqtt.connect(BROKER_URL, { clientId: myProfile.id });
+            client.on('connect', () => {
+                client.subscribe(`${APP_TOPIC}/discovery`); 
+                client.subscribe(`${APP_TOPIC}/msg/${myProfile.id}`);
+                
+                document.getElementById('login-screen').style.display = 'none';
+                document.getElementById('main-app').style.opacity = '1'; 
+                document.getElementById('main-app').style.pointerEvents = 'auto';
+                document.getElementById('music-player').classList.remove('hidden');
+                initMusicPlaylist();
+                if (window.restorePlayerPosition) window.restorePlayerPosition();
+                
+                document.getElementById('my-avatar').src = myProfile.avatar; 
+                document.getElementById('my-name').innerText = myProfile.name;
+                document.getElementById('my-status').innerText = myProfile.status;
+                
+                setInterval(() => { myProfile.lastSeen = Date.now(); client.publish(`${APP_TOPIC}/discovery`, JSON.stringify(myProfile)); }, 3000);
+                setInterval(cleanupUsers, 5000);
+            });
+
+            client.on('message', (t, m) => { 
+                try { const d = JSON.parse(m.toString()); if(t.includes('discovery')) handlePresence(d); else handleIncomingMessage(d, t); } catch(e){} 
+            });
+        }
+
+        function handlePresence(u) { if (u.id === myProfile.id) return; users.set(u.id, u); updateUI(); }
+        function cleanupUsers() {
+            const now = Date.now(); let changed = false;
+            for (let [id, u] of users.entries()) { if (now - u.lastSeen > 12000) { users.delete(id); changed = true; } }
+            if (changed) updateUI();
+        }
+
+        function updateUI() {
+            const listEl = document.getElementById('users-list');
+            const search = document.getElementById('search-chat').value.toLowerCase();
+            listEl.innerHTML = '';
+            let itemIndex = 0;
+            
+            const renderItem = (id, data, isGroup) => {
+                if(search && !data.name.toLowerCase().includes(search)) return;
+                
+                const msgs = chats[id] || [];
+                const unread = msgs.filter(m => m.unread).length;
+                const lastMsg = msgs.length > 0 ? msgs[msgs.length-1] : null;
+                
+                let previewText = data.status;
+                if (lastMsg) {
+                    if (lastMsg.type === 'text') previewText = lastMsg.content;
+                    else if (lastMsg.type === 'audio') previewText = '🎤 Áudio';
+                    else if (lastMsg.type === 'location') previewText = '📍 Localização';
+                    else if (lastMsg.type === 'delete') previewText = '🚫 Apagada';
+                    else if (lastMsg.type === 'image') previewText = '🖼️ Imagem';
+                    else previewText = '📎 Arquivo';
+                } else if (isGroup) {
+                    previewText = 'Novo grupo';
+                }
+                
+                const active = activeChatId === id ? 'bg-app-input border-app-accent border-l-4' : 'border-transparent hover:bg-app-input/40 border-l-4';
+                const badge = unread ? `<div class="text-white text-[10px] w-5 h-5 flex items-center justify-center rounded-full font-bold shadow-lg animate-pulse" style="background-color: var(--app-accent)">${unread}</div>` : '';
+                const delay = Math.min(itemIndex++, 12) * 0.035;
+                
+                listEl.innerHTML += `
+                    <div onclick="openChat('${id}', ${isGroup})" style="animation-delay:${delay}s" class="list-item-enter tap-btn flex items-center p-3 rounded-xl cursor-pointer transition mb-1 ${active}">
+                        <img src="${data.avatar}" class="w-12 h-12 rounded-full shrink-0 object-cover bg-app-panel">
+                        <div class="ml-3 flex-1 overflow-hidden">
+                            <div class="flex justify-between items-baseline w-full">
+                                <h4 class="font-bold text-app-text truncate text-sm">${isGroup ? '👥 ' : ''}${data.name}</h4>
+                            </div>
+                            <div class="flex justify-between items-center mt-0.5">
+                                <p class="text-xs text-app-text-muted truncate flex-1 mr-2">${previewText}</p>
+                                ${badge}
+                            </div>
+                        </div>
+                    </div>`;
+            };
+
+            Object.keys(groups).forEach(gId => renderItem(gId, groups[gId], true));
+            users.forEach((u, id) => renderItem(id, u, false));
+        }
+
+        function openChat(id, isGroup) {
+            activeChatId = id;
+            if (chats[id]) chats[id].forEach(m => m.unread = false); else chats[id] = [];
+            
+            document.body.classList.add('mobile-view-chat');
+
+            document.getElementById('empty-state').classList.add('hidden');
+            document.getElementById('chat-header').style.display = 'flex';
+            document.getElementById('messages-container').classList.remove('hidden');
+            document.getElementById('chat-input-area').classList.remove('hidden');
+            
+            const data = isGroup ? groups[id] : users.get(id);
+            document.getElementById('active-user-avatar').src = data.avatar;
+            document.getElementById('active-user-name').innerText = data.name;
+            document.getElementById('active-user-distance').innerText = isGroup ? `${data.members.length} participantes` : data.status;
+            document.getElementById('call-btn').title = isGroup ? 'Chamada de voz em grupo' : 'Chamada de voz';
+            
+            updateUI(); renderMessages();
+        }
+
+        function backToSidebar() {
+            activeChatId = null;
+            document.body.classList.remove('mobile-view-chat');
+            updateUI();
+        }
+
+        function sendPayload(type, content, meta = {}, isVolatile = false) {
+            if (!activeChatId) return;
+            const msgObj = { id: 'msg_' + Date.now(), senderId: myProfile.id, senderName: myProfile.name, time: new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}), type, content, ...meta };
+            const payload = JSON.stringify(msgObj);
+            
+            if(payload.length > MAX_PAYLOAD) return alert('Arquivo excede o limite de 10MB do sistema.');
+
+            const topic = groups[activeChatId] ? `${APP_TOPIC}/group/${activeChatId}` : `${APP_TOPIC}/msg/${activeChatId}`;
+            client.publish(topic, payload);
+            
+            if(!isVolatile) {
+                if(!chats[activeChatId]) chats[activeChatId] = [];
+                chats[activeChatId].push({ ...msgObj, isMe: true });
+                renderMessages(); updateUI();
+            }
+        }
+
+        function sendTextMessage() {
+            const i = document.getElementById('message-input');
+            if (i.value.trim()) {
+                const meta = replyingTo ? { replyTo: replyingTo } : {};
+                sendPayload('text', i.value.trim(), meta);
+                i.value = '';
+                cancelReply();
+                sendPayload('typing','',{isTyping:false},true);
+            }
+        }
+
+        function handleTyping() {
+            sendPayload('typing', '', { isTyping: true }, true);
+            clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(() => sendPayload('typing', '', { isTyping: false }, true), 1500);
+        }
+
+        function handleIncomingMessage(msg, topic) {
+            let targetId = msg.senderId;
+            if (topic.includes('/group/')) targetId = topic.split('/').pop();
+            
+            if (msg.type === 'group_invite') {
+                if(!groups[msg.groupData.id]) { groups[msg.groupData.id] = msg.groupData; client.subscribe(`${APP_TOPIC}/group/${msg.groupData.id}`); updateUI(); }
+                return;
+            }
+
+            if (msg.senderId === myProfile.id) return; 
+
+            if (CALL_SIGNALS.includes(msg.type)) { handleCallSignal(msg); return; }
+
+            if (msg.type === 'typing') {
+                if (activeChatId === targetId) {
+                    const ind = document.getElementById('typing-indicator');
+                    if(msg.isTyping) { ind.classList.remove('hidden'); ind.querySelector('span').innerText = (msg.senderName || 'Alguém') + ' está digitando'; } 
+                    else ind.classList.add('hidden');
+                }
+                return;
+            }
+            if (msg.type === 'delete') {
+                const idx = chats[targetId].findIndex(m => m.id === msg.content);
+                if(idx > -1) { chats[targetId][idx].type = 'deleted'; chats[targetId][idx].content = ''; if(activeChatId === targetId) renderMessages(); updateUI(); }
+                return;
+            }
+            if (msg.type === 'reaction') {
+                const list = chats[targetId] || [];
+                const target = list.find(m => m.id === msg.targetMsgId);
+                if (target) {
+                    if (!target.reactions) target.reactions = {};
+                    const arr = target.reactions[msg.emoji] || [];
+                    const has = arr.includes(msg.senderId);
+                    target.reactions[msg.emoji] = msg.remove ? arr.filter(u => u !== msg.senderId) : (has ? arr : [...arr, msg.senderId]);
+                    if (!target.reactions[msg.emoji].length) delete target.reactions[msg.emoji];
+                    if (activeChatId === targetId) renderMessages();
+                }
+                return;
+            }
+
+            if (!chats[targetId]) chats[targetId] = [];
+            chats[targetId].push({ ...msg, isMe: false, unread: activeChatId !== targetId });
+            if (activeChatId === targetId) renderMessages(); else updateUI();
+        }
+
+        let replyingTo = null;
+
+        function startReply(msgId) {
+            const m = (chats[activeChatId] || []).find(x => x.id === msgId);
+            if (!m || m.type === 'deleted') return;
+            replyingTo = { id: m.id, name: m.isMe ? 'Você' : (m.senderName || 'Alguém'), snippet: m.type === 'text' ? m.content.slice(0, 80) : ({image:'📷 Foto', audio:'🎤 Áudio', location:'📍 Localização'}[m.type] || 'Mensagem') };
+            document.getElementById('reply-preview-name').innerText = replyingTo.name;
+            document.getElementById('reply-preview-snippet').innerText = replyingTo.snippet;
+            document.getElementById('reply-preview').classList.remove('hidden');
+            document.getElementById('reply-preview').classList.add('flex');
+            document.getElementById('message-input').focus();
+        }
+        function cancelReply() {
+            replyingTo = null;
+            document.getElementById('reply-preview').classList.add('hidden');
+            document.getElementById('reply-preview').classList.remove('flex');
+        }
+
+        const QUICK_REACTIONS = ['👍','❤️','😂','😮','😢'];
+        let openReactionPickerId = null;
+        function toggleReactionPicker(msgId) {
+            openReactionPickerId = openReactionPickerId === msgId ? null : msgId;
+            renderMessages();
+        }
+        function reactToMessage(msgId, emoji) {
+            const list = chats[activeChatId] || [];
+            const m = list.find(x => x.id === msgId);
+            if (!m) return;
+            if (!m.reactions) m.reactions = {};
+            const mine = m.reactions[emoji] || [];
+            const has = mine.includes(myProfile.id);
+            m.reactions[emoji] = has ? mine.filter(u => u !== myProfile.id) : [...mine, myProfile.id];
+            if (!m.reactions[emoji].length) delete m.reactions[emoji];
+
+            const topic = groups[activeChatId] ? `${APP_TOPIC}/group/${activeChatId}` : `${APP_TOPIC}/msg/${activeChatId}`;
+            client.publish(topic, JSON.stringify({ type: 'reaction', senderId: myProfile.id, targetMsgId: msgId, emoji, remove: has }));
+            openReactionPickerId = null;
+            renderMessages();
+        }
+
+        function renderMessages() {
+            const c = document.getElementById('messages-inner'); c.innerHTML = '';
+            (chats[activeChatId] || []).forEach(m => {
+                const isMe = m.isMe;
+                const align = isMe ? 'justify-end' : 'justify-start';
+                
+                const bg = isMe ? 'bg-app-message-me text-white rounded-br-sm' : 'bg-app-message-other text-app-text rounded-bl-sm border border-app-border';
+                const nameLabel = (!isMe && groups[activeChatId]) ? `<p class="text-[10px] font-bold mb-0.5 opacity-80" style="color: var(--app-accent)">${m.senderName}</p>` : '';
+                
+                let html = '';
+                if(m.type === 'deleted') html = `<p class="text-sm italic opacity-60 flex items-center gap-1">🚫 Mensagem apagada</p>`;
+                else if(m.type === 'text') html = `<p class="text-[15px] leading-relaxed break-words">${m.content}</p>`;
+                else if(m.type === 'image') html = `<img src="${m.content}" class="rounded-lg w-64 max-w-full cursor-pointer hover:opacity-90 bg-white" onclick="window.open('${m.content}')">`;
+                else if(m.type === 'audio') html = `<audio src="${m.content}" controls class="w-48 sm:w-64 max-w-full rounded-md shadow-sm"></audio>`;
+                else if(m.type === 'location') html = `<a href="https://maps.google.com/?q=${m.content}" target="_blank" class="flex items-center gap-2 font-bold underline hover:opacity-80 py-1">📍 Ver no Mapa</a>`;
+
+                const replyBlock = m.replyTo ? `<div class="mb-1.5 pl-2 border-l-2 opacity-80 text-xs" style="border-color: currentColor"><p class="font-bold">${m.replyTo.name}</p><p class="truncate max-w-[200px]">${m.replyTo.snippet}</p></div>` : '';
+
+                const reactionsHtml = m.reactions && Object.keys(m.reactions).length ? `
+                    <div class="flex gap-1 flex-wrap mt-1">
+                        ${Object.entries(m.reactions).map(([emoji, users]) => `<span onclick="reactToMessage('${m.id}','${emoji}')" class="tap-btn text-[11px] bg-black/10 rounded-full px-1.5 py-0.5 cursor-pointer">${emoji} ${users.length}</span>`).join('')}
+                    </div>` : '';
+
+                const pickerHtml = openReactionPickerId === m.id ? `
+                    <div class="absolute -top-9 ${isMe ? 'right-0' : 'left-0'} bg-app-panel border border-app-border rounded-full shadow-lg flex gap-1 px-2 py-1 z-10">
+                        ${QUICK_REACTIONS.map(e => `<span onclick="reactToMessage('${m.id}','${e}')" class="tap-btn cursor-pointer hover:scale-125 transition text-lg">${e}</span>`).join('')}
+                    </div>` : '';
+
+                const actionsHtml = m.type !== 'deleted' ? `
+                    <div class="absolute -top-3 ${isMe ? '-left-14' : '-right-14'} hidden group-hover:flex gap-1 bg-app-panel border border-app-border rounded-full px-1.5 py-1 shadow">
+                        <button onclick="toggleReactionPicker('${m.id}')" class="tap-btn text-xs" title="Reagir">😊</button>
+                        <button onclick="startReply('${m.id}')" class="tap-btn text-xs" title="Responder">↩️</button>
+                    </div>` : '';
+
+                const deleteEvt = isMe && m.type !== 'deleted' ? `ondblclick="requestDeleteMessage('${m.id}')" title="Duplo clique para apagar"` : '';
+
+                c.innerHTML += `
+                    <div class="flex w-full ${align} message-enter">
+                        <div class="msg-bubble max-w-[80%] px-3 py-2 rounded-2xl ${bg} shadow-sm relative group" ${deleteEvt}>
+                            ${pickerHtml}${actionsHtml}
+                            ${nameLabel}${replyBlock}${html}${reactionsHtml}
+                            <div class="text-[9px] mt-1 text-right opacity-60 flex justify-end items-center gap-1">
+                                ${m.time} ${isMe ? '✓✓' : ''}
+                            </div>
+                        </div>
+                    </div>`;
+            });
+            const scrollWrap = document.getElementById('messages-container');
+            scrollWrap.scrollTop = scrollWrap.scrollHeight;
+        }
+
+        function requestDeleteMessage(msgId) {
+            if(confirm("Deseja apagar esta mensagem para todos?")) {
+                sendPayload('delete', msgId);
+                const idx = chats[activeChatId].findIndex(m => m.id === msgId);
+                if(idx > -1) { chats[activeChatId][idx].type = 'deleted'; chats[activeChatId][idx].content = ''; renderMessages(); updateUI(); }
+            }
+        }
+
+        // NAVEGADOR INTERNO — modo "Compatibilidade" busca o HTML da página através de um
+        // proxy (sem navegação direta ao domínio) e o injeta no iframe via srcdoc. Como o
+        // navegador não faz uma requisição de documento direta ao site, os cabeçalhos
+        // X-Frame-Options / CSP frame-ancestors (que só bloqueiam navegação de documento em
+        // iframe) não entram em ação — por isso a maioria dos sites deixa de "bloquear".
+        // Limitações reais e inevitáveis sem um servidor próprio: sites que exigem login
+        // (Gmail, redes sociais logadas) não funcionam pois o proxy não tem sua sessão; e
+        // apps de página única muito pesados em JS (que buscam dados em APIs próprias) podem
+        // carregar incompletos, pois só o HTML inicial passa pelo proxy — o restante das
+        // chamadas de API seguem direto ao site original e podem ser bloqueadas por CORS.
+        // Não existe truque 100% sem exceções: um navegador de verdade roda um motor
+        // completo (Chromium/WebKit) que uma página web não pode embutir sozinha.
+        let browserCurrentUrl = '';
+        let browserMode = 'proxy'; // 'proxy' ou 'direct'
+        let browserHistory = [];
+        let browserHistoryIndex = -1;
+        const PROXY_ENDPOINTS = [
+            u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
+            u => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u),
+            u => 'https://corsproxy.io/?url=' + encodeURIComponent(u)
+        ];
+
+        function searchEngineUrl(query) {
+            const engine = document.getElementById('browser-engine').value;
+            if (engine === 'ddg') return 'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query);
+            if (engine === 'wiki') return 'https://pt.wikipedia.org/wiki/Special:Search?search=' + encodeURIComponent(query);
+            return 'https://www.bing.com/search?q=' + encodeURIComponent(query);
+        }
+
+        function openBrowserModal() {
+            openModal('browser-modal');
+            if (!browserCurrentUrl) browserHome();
+        }
+        function closeBrowserModal() { closeModal('browser-modal'); }
+
+        function toggleBrowserMode() {
+            browserMode = browserMode === 'proxy' ? 'direct' : 'proxy';
+            const btn = document.getElementById('browser-mode-btn');
+            btn.innerText = browserMode === 'proxy' ? '🛡️ Compatibilidade' : '🌐 Direto';
+            if (browserCurrentUrl) loadUrl(browserCurrentUrl, { fromHistory: true });
+        }
+
+        function setSpinner(on, text) {
+            const sp = document.getElementById('browser-spinner');
+            sp.classList.toggle('hidden', !on);
+            sp.classList.toggle('flex', on);
+            if (text) document.getElementById('browser-spinner-text').innerText = text;
+        }
+        function showWarning(msg) {
+            const warn = document.getElementById('browser-warning');
+            if (!msg) { warn.classList.add('hidden'); warn.classList.remove('flex'); warn.innerHTML = ''; return; }
+            warn.innerHTML = msg;
+            warn.classList.remove('hidden'); warn.classList.add('flex');
+        }
+
+        function pushHistoryUrl(url) {
+            browserHistory = browserHistory.slice(0, browserHistoryIndex + 1);
+            browserHistory.push(url);
+            browserHistoryIndex = browserHistory.length - 1;
+        }
+
+        async function loadUrl(url, opts = {}) {
+            browserCurrentUrl = url;
+            document.getElementById('browser-url-input').value = url;
+            if (!opts.fromHistory) pushHistoryUrl(url);
+            showWarning(null);
+
+            const frame = document.getElementById('browser-frame');
+
+            if (browserMode === 'direct') {
+                frame.removeAttribute('srcdoc');
+                frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups allow-same-origin allow-top-navigation-by-user-activation');
+                setSpinner(true, 'Carregando...');
+                frame.src = url;
+                showWarning('⚠️ Modo direto: alguns sites (Google, Instagram, YouTube, bancos etc.) podem recusar a exibição aqui. Tente o modo 🛡️ Compatibilidade ou abra em nova aba (↗️).');
+                return;
+            }
+
+            // Modo Compatibilidade (proxy, sem iframe direto ao site)
+            setSpinner(true, 'Buscando página via proxy...');
+            frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups');
+            let html = null, lastErr = null;
+            for (const buildProxyUrl of PROXY_ENDPOINTS) {
+                try {
+                    const ctrl = new AbortController();
+                    const timeout = setTimeout(() => ctrl.abort(), 9000);
+                    const res = await fetch(buildProxyUrl(url), { signal: ctrl.signal });
+                    clearTimeout(timeout);
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    html = await res.text();
+                    if (html && html.length > 0) break;
+                } catch (err) { lastErr = err; }
+            }
+
+            if (!html) {
+                setSpinner(false);
+                showWarning('⚠️ Não foi possível buscar este site pelo proxy (' + (lastErr ? lastErr.message : 'erro') + '). Tentando modo direto como alternativa...');
+                frame.removeAttribute('srcdoc');
+                frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups allow-same-origin allow-top-navigation-by-user-activation');
+                frame.src = url;
+                return;
+            }
+
+            html = html.replace(/<meta[^>]+http-equiv=["']Content-Security-Policy["'][^>]*>/gi, '');
+            const baseTag = `<base href="${url}">`;
+            if (/<head[^>]*>/i.test(html)) html = html.replace(/<head[^>]*>/i, m => m + baseTag);
+            else html = baseTag + html;
+
+            const navScript = `<script>
+                document.addEventListener('click', function(e){
+                    const a = e.target.closest('a[href]');
+                    if(!a) return;
+                    const href = a.getAttribute('href');
+                    if(!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+                    e.preventDefault();
+                    try { const u = new URL(href, document.baseURI).href; parent.postMessage({type:'geochat-nav', url:u}, '*'); } catch(err){}
+                });
+                document.addEventListener('submit', function(e){
+                    const f = e.target; if(f.tagName !== 'FORM') return;
+                    e.preventDefault();
+                    try {
+                        const u = new URL(f.getAttribute('action') || document.baseURI, document.baseURI);
+                        if((f.method||'get').toLowerCase() === 'get') {
+                            new FormData(f).forEach((v,k) => u.searchParams.set(k, v));
+                        }
+                        parent.postMessage({type:'geochat-nav', url:u.href}, '*');
+                    } catch(err){}
+                });
+            <\/script>`;
+            html = /<\/body>/i.test(html) ? html.replace(/<\/body>/i, navScript + '</body>') : html + navScript;
+
+            frame.removeAttribute('src');
+            frame.srcdoc = html;
+            setSpinner(false);
+        }
+
+        window.addEventListener('message', (e) => {
+            if (e.data && e.data.type === 'geochat-nav' && typeof e.data.url === 'string') loadUrl(e.data.url);
+        });
+        document.getElementById('browser-frame').addEventListener('load', () => setSpinner(false));
+
+        function navigateBrowser() {
+            let val = document.getElementById('browser-url-input').value.trim();
+            if (!val) return;
+            let url = val;
+            const looksLikeUrl = /^https?:\/\//i.test(val) || (/\.[a-z]{2,}$/i.test(val.split('/')[0]) && !val.includes(' '));
+            if (!looksLikeUrl) url = searchEngineUrl(val);
+            else if (!/^https?:\/\//i.test(val)) url = 'https://' + val;
+            loadUrl(url);
+        }
+
+        function quickNav(url) { loadUrl(url); }
+        function browserHome() { loadUrl('https://www.bing.com'); }
+        function browserReload() { if (browserCurrentUrl) loadUrl(browserCurrentUrl, { fromHistory: true }); }
+        function browserBack() { if (browserHistoryIndex > 0) { browserHistoryIndex--; loadUrl(browserHistory[browserHistoryIndex], { fromHistory: true }); } }
+        function browserForward() { if (browserHistoryIndex < browserHistory.length - 1) { browserHistoryIndex++; loadUrl(browserHistory[browserHistoryIndex], { fromHistory: true }); } }
+        function openInNewTab() { if (browserCurrentUrl) window.open(browserCurrentUrl, '_blank'); }
+
+        function sendFile(input) {
+            const f = input.files[0]; if(!f) return;
+            if(f.size > 10*1024*1024) return alert('Máximo de 10MB por arquivo!');
+            const r = new FileReader();
+            r.onload = e => sendPayload(f.type.startsWith('image/')?'image':'file', e.target.result, {fileName: f.name});
+            r.readAsDataURL(f); input.value = '';
+        }
+
+        function openGroupModal() {
+            const listEl = document.getElementById('group-members-list'); listEl.innerHTML = '';
+            if(users.size === 0) listEl.innerHTML = `<p class="text-xs text-center text-app-text-muted">Nenhum usuário online.</p>`;
+            users.forEach(u => listEl.innerHTML += `<label class="flex items-center gap-2 p-2 hover:bg-app-input rounded cursor-pointer"><input type="checkbox" value="${u.id}" class="cb-member"><img src="${u.avatar}" class="w-6 h-6 rounded-full"><span class="text-sm">${u.name}</span></label>`);
+            openModal('group-modal');
+        }
+        function closeGroupModal() { closeModal('group-modal'); }
+        function createGroup() {
+            const name = document.getElementById('group-name-input').value.trim(); if(!name) return;
+            const members = Array.from(document.querySelectorAll('.cb-member:checked')).map(cb => cb.value); members.push(myProfile.id);
+            const gId = 'g_' + Date.now();
+            groups[gId] = { id: gId, name: name, members: members, avatar: `https://api.dicebear.com/7.x/identicon/svg?seed=${gId}` };
+            client.subscribe(`${APP_TOPIC}/group/${gId}`);
+            members.forEach(m => { if(m!==myProfile.id) client.publish(`${APP_TOPIC}/msg/${m}`, JSON.stringify({type:'group_invite', groupData:groups[gId]})); });
+            closeModal('group-modal'); openChat(gId, true);
+        }
+    </script>
+
+    <!-- Player de Música Flutuante (persiste tocando em qualquer tela do app) -->
+    <div id="music-player" class="hidden fixed bottom-4 right-4 z-40 flex flex-col items-end gap-3">
+        <div id="music-panel" class="hidden w-80 max-w-[85vw] bg-app-panel border border-app-border rounded-2xl shadow-2xl overflow-hidden origin-bottom-right">
+            <div id="music-cover" class="h-24 flex items-center justify-between px-4 relative cursor-grab" style="background: linear-gradient(135deg, var(--app-accent), #1e1b2e); touch-action: none;">
+                <div>
+                    <p id="music-genre-label" class="text-[10px] uppercase font-bold text-white/70 tracking-wide">Nenhuma música</p>
+                    <p id="music-track-name" class="text-white font-black text-lg leading-tight">Escolha uma faixa</p>
+                </div>
+                <div id="music-emoji" class="text-4xl">🎵</div>
+                <button onclick="toggleMusicPanel()" class="absolute top-2 right-2 text-white/70 hover:text-white text-sm tap-btn">✕</button>
+            </div>
+
+            <div class="flex items-center justify-center gap-1.5 px-4 pt-3" id="music-eq">
+                <span class="music-bar"></span><span class="music-bar"></span><span class="music-bar"></span><span class="music-bar"></span><span class="music-bar"></span>
+            </div>
+
+            <div class="px-4 pt-2">
+                <input type="range" id="music-progress" min="0" max="100" value="0" oninput="seekMusic(this.value)" class="w-full accent-blue-500 h-1">
+                <div class="flex justify-between text-[10px] text-app-text-muted mt-0.5">
+                    <span id="music-time-cur">0:00</span>
+                    <span id="music-time-total">--:--</span>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-center gap-3 py-3">
+                <button onclick="toggleShuffle()" id="music-shuffle-btn" class="tap-btn text-lg text-app-text-muted" title="Aleatório">🔀</button>
+                <button onclick="prevTrack()" class="tap-btn text-2xl text-app-text" title="Anterior">⏮️</button>
+                <button onclick="togglePlayPause()" id="music-playpause-btn" class="tap-btn w-12 h-12 rounded-full flex items-center justify-center text-white text-xl shadow-lg" style="background-color: var(--app-accent)" title="Tocar/Pausar">▶️</button>
+                <button onclick="nextTrack()" class="tap-btn text-2xl text-app-text" title="Próxima">⏭️</button>
+                <button onclick="toggleRepeat()" id="music-repeat-btn" class="tap-btn text-lg text-app-text-muted" title="Repetir">🔁</button>
+            </div>
+
+            <div class="flex items-center gap-2 px-4 pb-3">
+                <span class="text-xs">🔉</span>
+                <input type="range" id="music-volume" min="0" max="100" value="50" oninput="setMusicVolume(this.value/100)" class="w-full accent-blue-500 h-1">
+            </div>
+
+            <label class="tap-btn flex items-center justify-center gap-2 mx-4 mb-3 bg-app-input rounded-lg py-2 text-xs text-app-text cursor-pointer hover:brightness-110">
+                💻 <span>Adicionar músicas do computador</span>
+                <input type="file" accept="audio/*" multiple class="hidden" onchange="handleMusicUpload(event)">
+            </label>
+
+            <div class="border-t border-app-border">
+                <p class="text-[10px] uppercase font-bold text-app-text-muted px-4 pt-2 pb-1">Playlist</p>
+                <div id="music-playlist" class="max-h-52 overflow-y-auto no-scrollbar px-2 pb-3"></div>
+            </div>
+        </div>
+
+        <button id="music-bubble" class="tap-btn w-14 h-14 rounded-full shadow-2xl flex items-center justify-center text-2xl text-white cursor-grab" style="background: linear-gradient(135deg, var(--app-accent), #1e1b2e); touch-action: none;">
+            <span id="music-bubble-icon">🎵</span>
+        </button>
+    </div>
+
+    <!-- Banner de chamada recebida -->
+    <div id="incoming-call-banner" class="hidden fixed top-4 left-1/2 -translate-x-1/2 z-[70] bg-app-panel border border-app-border rounded-2xl shadow-2xl px-5 py-3 flex items-center gap-4">
+        <img id="incoming-call-avatar" src="" class="w-12 h-12 rounded-full object-cover bg-white animate-pulse">
+        <div>
+            <p class="font-bold text-app-text" id="incoming-call-name">Alguém</p>
+            <p class="text-xs text-app-text-muted">📞 Chamada de voz recebida...</p>
+        </div>
+        <button onclick="answerCall()" class="tap-btn w-10 h-10 rounded-full bg-green-500 text-white flex items-center justify-center text-lg">✔️</button>
+        <button onclick="rejectCall()" class="tap-btn w-10 h-10 rounded-full bg-red-500 text-white flex items-center justify-center text-lg">✕</button>
+    </div>
+
+    <!-- Barra de chamada ativa (persiste enquanto navega pelo app) -->
+    <div id="active-call-bar" class="hidden fixed bottom-4 left-4 z-40 bg-app-panel border border-app-border rounded-2xl shadow-2xl px-4 py-2.5 flex items-center gap-3">
+        <img id="call-peer-avatar" src="" class="w-9 h-9 rounded-full object-cover bg-white">
+        <div>
+            <p id="call-peer-name" class="text-xs font-bold text-app-text leading-tight">Fulano</p>
+            <p id="call-timer" class="text-[10px] text-app-text-muted">00:00</p>
+        </div>
+        <button onclick="toggleMute()" id="call-mute-btn" class="tap-btn w-8 h-8 rounded-full bg-app-input flex items-center justify-center" title="Mutar">🎤</button>
+        <button onclick="document.getElementById('cinema-file-input').click()" class="tap-btn w-8 h-8 rounded-full bg-app-input flex items-center justify-center" title="Modo Cinema">🎬</button>
+        <button onclick="endCall()" class="tap-btn w-8 h-8 rounded-full bg-red-500 text-white flex items-center justify-center" title="Encerrar">📵</button>
+    </div>
+    <input type="file" id="cinema-file-input" accept="video/*" class="hidden" onchange="startCinemaShare(this)">
+
+    <!-- Modo Cinema -->
+    <div id="cinema-modal" class="modal-overlay fixed inset-0 bg-black/95 z-[55] hidden items-center justify-center p-3">
+        <div class="modal-card w-full max-w-4xl flex flex-col gap-3">
+            <div class="flex items-center justify-between text-white px-1">
+                <p class="font-bold flex items-center gap-2">🎬 <span id="cinema-title">Modo Cinema</span></p>
+                <div class="flex items-center gap-3">
+                    <span id="cinema-status" class="text-xs text-app-text-muted"></span>
+                    <button onclick="closeCinemaView()" class="tap-btn text-white/70 hover:text-white text-xl">✕</button>
+                </div>
+            </div>
+            <div class="bg-black rounded-xl overflow-hidden flex items-center justify-center aspect-video">
+                <video id="cinema-video" controls autoplay playsinline class="w-full h-full"></video>
+            </div>
+            <div id="cinema-sender-controls" class="hidden justify-center">
+                <button onclick="stopCinemaShare()" class="tap-btn px-5 py-2 bg-red-500 text-white rounded-lg font-bold text-sm">Parar de Compartilhar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Áudio remoto da chamada de voz (oculto) -->
+    <div id="call-audio-sinks" class="hidden"></div>
+
+    <script>
+        // ===================================================================
+        // PLAYER DE MÚSICA — toca em segundo plano enquanto o usuário conversa.
+        // Duas fontes de faixas:
+        // 1) "Gerado": motor de música proceduralmente sintetizado via Web Audio
+        //    API (sem arquivos externos, sem internet, sem direitos autorais) —
+        //    dá muitas "músicas" (12 faixas) prontas para uso imediato.
+        // 2) "Minhas Músicas": arquivos de áudio do próprio computador do
+        //    usuário, adicionados via upload (respeita direitos autorais, pois
+        //    é o próprio usuário fornecendo o conteúdo que já possui).
+        // ===================================================================
+
+        const SCALES = {
+            minor: [0,2,3,5,7,8,10], major: [0,2,4,5,7,9,11], dorian: [0,2,3,5,7,9,10],
+            pentaMinor: [0,3,5,7,10], pentaMajor: [0,2,4,7,9], phrygian: [0,1,3,5,7,8,10],
+        };
+        function chord(root, size) { const out=[]; for(let i=0;i<(size||3);i++) out.push(root+i*2); return out; }
+
+        const GENERATED_TRACKS = [
+            { id:'g1', name:'Tarde Preguiçosa', genre:'Lo-fi Chill', emoji:'🎧', bpm:78, scale:SCALES.pentaMinor, root:130.81, beatsPerChord:4, progression:[0,2,3,1].map(r=>chord(r)), padWave:'triangle', padFilterFreq:900, arp:true, arpSteps:8, arpWave:'sine', bass:true, hats:true, kick:false },
+            { id:'g2', name:'Café das Cinco', genre:'Jazz Café', emoji:'☕', bpm:92, scale:SCALES.dorian, root:146.83, beatsPerChord:4, progression:[0,3,4,0].map(r=>chord(r,4)), padWave:'sine', padFilterFreq:1100, arp:true, arpSteps:8, arpWave:'triangle', bass:true, hats:true, kick:false },
+            { id:'g3', name:'Nebulosa', genre:'Ambient Space', emoji:'🌌', bpm:50, scale:SCALES.major, root:98, beatsPerChord:8, progression:[0,5,3,4].map(r=>chord(r,3)), padWave:'sine', padFilterFreq:600, arp:false, bass:false, hats:false, kick:false },
+            { id:'g4', name:'Rodovia Neon', genre:'Synthwave', emoji:'🌆', bpm:100, scale:SCALES.minor, root:110, beatsPerChord:4, progression:[0,5,2,6].map(r=>chord(r)), padWave:'sawtooth', padFilterFreq:1500, arp:true, arpSteps:16, arpWave:'sawtooth', bass:true, hats:true, kick:true, kickPattern:[0,1,2,3] },
+            { id:'g5', name:'Primeiro Sol', genre:'Acústico Manhã', emoji:'☀️', bpm:85, scale:SCALES.major, root:174.61, beatsPerChord:4, progression:[0,4,5,3].map(r=>chord(r)), padWave:'triangle', padFilterFreq:1000, arp:true, arpSteps:6, arpWave:'triangle', bass:false, hats:false, kick:false },
+            { id:'g6', name:'Respiração Profunda', genre:'Deep Focus', emoji:'🧘', bpm:40, scale:SCALES.pentaMajor, root:87.31, beatsPerChord:8, progression:[0,2].map(r=>chord(r,3)), padWave:'sine', padFilterFreq:500, arp:false, bass:false, hats:false, kick:false },
+            { id:'g7', name:'Chuva na Janela', genre:'Piano Noturno', emoji:'🌧️', bpm:70, scale:SCALES.minor, root:130.81, beatsPerChord:4, progression:[0,6,5,4].map(r=>chord(r)), padWave:'sine', padFilterFreq:800, arp:true, arpSteps:8, arpWave:'triangle', bass:true, hats:false, kick:false },
+            { id:'g8', name:'Pixel Quest', genre:'Retro Game', emoji:'🎮', bpm:132, scale:SCALES.pentaMajor, root:196, beatsPerChord:2, progression:[0,1,2,1].map(r=>chord(r,3)), padWave:'square', padFilterFreq:2000, arp:true, arpSteps:8, arpWave:'square', bass:true, hats:true, kick:true, kickPattern:[0] },
+            { id:'g9', name:'Taças de Cristal', genre:'Meditação', emoji:'🎐', bpm:30, scale:SCALES.pentaMinor, root:65.41, beatsPerChord:10, progression:[0,1].map(r=>chord(r,3)), padWave:'sine', padFilterFreq:450, arp:false, bass:false, hats:false, kick:false },
+            { id:'g10', name:'Direção Noturna', genre:'Night Drive', emoji:'🚗', bpm:112, scale:SCALES.minor, root:123.47, beatsPerChord:4, progression:[0,3,5,4].map(r=>chord(r)), padWave:'sawtooth', padFilterFreq:1300, arp:true, arpSteps:16, arpWave:'sine', bass:true, hats:true, kick:true, kickPattern:[0,2] },
+            { id:'g11', name:'Cordas ao Entardecer', genre:'Chill Guitar', emoji:'🎸', bpm:80, scale:SCALES.major, root:164.81, beatsPerChord:4, progression:[0,5,3,4].map(r=>chord(r)), padWave:'triangle', padFilterFreq:1100, arp:true, arpSteps:8, arpWave:'triangle', bass:false, hats:false, kick:false },
+            { id:'g12', name:'Sala Cyber', genre:'Cyber Lounge', emoji:'🤖', bpm:95, scale:SCALES.phrygian, root:116.54, beatsPerChord:4, progression:[0,2,4,1].map(r=>chord(r)), padWave:'sawtooth', padFilterFreq:1000, arp:true, arpSteps:8, arpWave:'square', bass:true, hats:true, kick:false },
+        ];
+
+        let musicAudioCtx = null, musicMasterGain = null, musicAnalyser = null, musicNoiseBuffer = null;
+        let fileAudioEl = null, fileSourceNode = null;
+        let musicPlaylist = [];
+        let musicCurrentIndex = -1;
+        let musicIsPlaying = false;
+        let musicShuffle = false;
+        let musicRepeat = 'all'; // 'off' | 'all' | 'one'
+        let genEngineTimer = null;
+        let genEngineTrack = null;
+        let genEngineChordIdx = 0;
+        let genEngineStartTime = 0;
+        let eqRafId = null;
+
+        function ensureMusicContext() {
+            if (musicAudioCtx) return;
+            musicAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            musicMasterGain = musicAudioCtx.createGain();
+            const savedVol = parseFloat(localStorage.getItem('geochat_music_vol') || '0.5');
+            musicMasterGain.gain.value = savedVol;
+            document.getElementById('music-volume').value = Math.round(savedVol * 100);
+
+            const dry = musicAudioCtx.createGain(); dry.gain.value = 0.85;
+            const revGain = musicAudioCtx.createGain(); revGain.gain.value = 0.3;
+            const conv = musicAudioCtx.createConvolver();
+            conv.buffer = buildImpulse(musicAudioCtx, 2.2, 2.4);
+            musicMasterGain.connect(dry).connect(musicAudioCtx.destination);
+            musicMasterGain.connect(conv).connect(revGain).connect(musicAudioCtx.destination);
+
+            musicAnalyser = musicAudioCtx.createAnalyser();
+            musicAnalyser.fftSize = 64;
+            musicMasterGain.connect(musicAnalyser);
+
+            fileAudioEl = new Audio();
+            fileAudioEl.crossOrigin = 'anonymous';
+            fileSourceNode = musicAudioCtx.createMediaElementSource(fileAudioEl);
+            fileSourceNode.connect(musicMasterGain);
+            fileAudioEl.addEventListener('timeupdate', updateProgressUI);
+            fileAudioEl.addEventListener('loadedmetadata', updateProgressUI);
+            fileAudioEl.addEventListener('ended', () => handleTrackEnded());
+        }
+
+        function buildImpulse(ctx, duration, decay) {
+            const rate = ctx.sampleRate, length = Math.floor(rate * duration);
+            const buf = ctx.createBuffer(2, length, rate);
+            for (let ch = 0; ch < 2; ch++) {
+                const d = buf.getChannelData(ch);
+                for (let i = 0; i < length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
+            }
+            return buf;
+        }
+        function getNoiseBuffer() {
+            if (musicNoiseBuffer) return musicNoiseBuffer;
+            const len = musicAudioCtx.sampleRate;
+            musicNoiseBuffer = musicAudioCtx.createBuffer(1, len, musicAudioCtx.sampleRate);
+            const d = musicNoiseBuffer.getChannelData(0);
+            for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+            return musicNoiseBuffer;
+        }
+
+        function degreeToFreq(track, idx) {
+            const len = track.scale.length;
+            const octave = Math.floor(idx / len);
+            const semitone = track.scale[((idx % len) + len) % len] + octave * 12;
+            return track.root * Math.pow(2, semitone / 12);
+        }
+
+        function playPad(freqs, dur, track) {
+            const t0 = musicAudioCtx.currentTime;
+            freqs.forEach(f => {
+                const osc = musicAudioCtx.createOscillator();
+                osc.type = track.padWave; osc.frequency.value = f;
+                const filt = musicAudioCtx.createBiquadFilter();
+                filt.type = 'lowpass'; filt.frequency.value = track.padFilterFreq || 1200;
+                const g = musicAudioCtx.createGain();
+                g.gain.setValueAtTime(0.0001, t0);
+                g.gain.linearRampToValueAtTime(0.11, t0 + dur * 0.3);
+                g.gain.linearRampToValueAtTime(0.0001, t0 + dur);
+                osc.connect(filt).connect(g).connect(musicMasterGain);
+                osc.start(t0); osc.stop(t0 + dur + 0.05);
+            });
+        }
+        function playBass(freq, dur) {
+            const t0 = musicAudioCtx.currentTime;
+            const osc = musicAudioCtx.createOscillator();
+            osc.type = 'sine'; osc.frequency.value = freq / 2;
+            const g = musicAudioCtx.createGain();
+            g.gain.setValueAtTime(0.0001, t0);
+            g.gain.exponentialRampToValueAtTime(0.25, t0 + 0.05);
+            g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur * 0.9);
+            osc.connect(g).connect(musicMasterGain);
+            osc.start(t0); osc.stop(t0 + dur);
+        }
+        function playPluck(freq, dur, wave) {
+            const t0 = musicAudioCtx.currentTime;
+            const osc = musicAudioCtx.createOscillator();
+            osc.type = wave || 'triangle'; osc.frequency.value = freq;
+            const g = musicAudioCtx.createGain();
+            g.gain.setValueAtTime(0.0001, t0);
+            g.gain.exponentialRampToValueAtTime(0.15, t0 + 0.01);
+            g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+            osc.connect(g).connect(musicMasterGain);
+            osc.start(t0); osc.stop(t0 + dur + 0.02);
+        }
+        function playHat() {
+            const t0 = musicAudioCtx.currentTime;
+            const src = musicAudioCtx.createBufferSource();
+            src.buffer = getNoiseBuffer();
+            const filt = musicAudioCtx.createBiquadFilter();
+            filt.type = 'highpass'; filt.frequency.value = 7000;
+            const g = musicAudioCtx.createGain();
+            g.gain.setValueAtTime(0.05, t0);
+            g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.05);
+            src.connect(filt).connect(g).connect(musicMasterGain);
+            src.start(t0); src.stop(t0 + 0.06);
+        }
+        function playKick() {
+            const t0 = musicAudioCtx.currentTime;
+            const osc = musicAudioCtx.createOscillator();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(120, t0);
+            osc.frequency.exponentialRampToValueAtTime(40, t0 + 0.15);
+            const g = musicAudioCtx.createGain();
+            g.gain.setValueAtTime(0.3, t0);
+            g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
+            osc.connect(g).connect(musicMasterGain);
+            osc.start(t0); osc.stop(t0 + 0.25);
+        }
+
+        function scheduleGeneratedBar() {
+            if (!musicIsPlaying || !genEngineTrack) return;
+            const track = genEngineTrack;
+            const beatDur = 60 / track.bpm;
+            const barDur = beatDur * track.beatsPerChord;
+            const degrees = track.progression[genEngineChordIdx % track.progression.length];
+            const freqs = degrees.map(d => degreeToFreq(track, d));
+
+            playPad(freqs, barDur * 1.05, track);
+            if (track.bass) playBass(freqs[0], barDur);
+            if (track.arp) {
+                const steps = track.arpSteps || 8;
+                const stepDur = barDur / steps;
+                for (let s = 0; s < steps; s++) {
+                    const f = freqs[s % freqs.length] * (Math.floor(s / freqs.length) % 2 === 1 ? 2 : 1);
+                    setTimeout(() => { if (musicIsPlaying) playPluck(f, stepDur * 0.9, track.arpWave); }, s * stepDur * 1000);
+                }
+            }
+            if (track.hats) {
+                const steps = 8, stepDur = barDur / steps;
+                for (let s = 0; s < steps; s++) setTimeout(() => { if (musicIsPlaying) playHat(); }, s * stepDur * 1000);
+            }
+            if (track.kick) {
+                const hits = track.kickPattern || [0];
+                hits.forEach(h => setTimeout(() => { if (musicIsPlaying) playKick(); }, h * beatDur * 1000));
+            }
+
+            genEngineChordIdx++;
+            genEngineTimer = setTimeout(scheduleGeneratedBar, barDur * 1000);
+        }
+
+        function startGeneratedTrack(track) {
+            stopGeneratedTrack();
+            ensureMusicContext();
+            if (musicAudioCtx.state === 'suspended') musicAudioCtx.resume();
+            genEngineTrack = track;
+            genEngineChordIdx = 0;
+            genEngineStartTime = Date.now();
+            musicIsPlaying = true;
+            scheduleGeneratedBar();
+        }
+        function stopGeneratedTrack() {
+            if (genEngineTimer) clearTimeout(genEngineTimer);
+            genEngineTimer = null; genEngineTrack = null;
+        }
+
+        function initMusicPlaylist() {
+            if (musicPlaylist.length) return; // já inicializado
+            musicPlaylist = GENERATED_TRACKS.map(cfg => ({ type: 'generated', id: cfg.id, name: cfg.name, genre: cfg.genre, emoji: cfg.emoji, config: cfg }));
+            renderMusicPlaylist();
+        }
+
+        function renderMusicPlaylist() {
+            const el = document.getElementById('music-playlist');
+            el.innerHTML = musicPlaylist.map((t, i) => `
+                <div onclick="selectTrack(${i})" class="music-playlist-item tap-btn flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer ${i === musicCurrentIndex ? 'playing' : ''}">
+                    <span class="text-xl">${t.emoji || '🎵'}</span>
+                    <div class="flex-1 overflow-hidden">
+                        <p class="text-xs font-bold text-app-text truncate">${t.name}</p>
+                        <p class="text-[10px] text-app-text-muted truncate">${t.genre}</p>
+                    </div>
+                </div>`).join('');
+        }
+
+        function toggleMusicPanel() {
+            const panel = document.getElementById('music-panel');
+            const willOpen = panel.classList.contains('hidden');
+            if (willOpen) { panel.classList.remove('hidden'); requestAnimationFrame(() => panel.classList.add('is-open')); }
+            else { panel.classList.remove('is-open'); setTimeout(() => panel.classList.add('hidden'), 220); }
+        }
+
+        // ===== Arrastar o botão/widget flutuante para qualquer lugar da tela =====
+        (function setupMusicDrag() {
+            const container = document.getElementById('music-player');
+            const bubbleHandle = document.getElementById('music-bubble');
+            const panelHandle = document.getElementById('music-cover');
+
+            function lockToPixelPosition() {
+                const rect = container.getBoundingClientRect();
+                container.style.left = rect.left + 'px';
+                container.style.top = rect.top + 'px';
+                container.style.right = 'auto';
+                container.style.bottom = 'auto';
+            }
+
+            function clamp(val, min, max) { return Math.min(Math.max(val, min), max); }
+
+            function applyPosition(left, top, animated) {
+                const rect = container.getBoundingClientRect();
+                const maxLeft = Math.max(4, window.innerWidth - rect.width - 4);
+                const maxTop = Math.max(4, window.innerHeight - rect.height - 4);
+                left = clamp(left, 4, maxLeft);
+                top = clamp(top, 4, maxTop);
+                container.classList.toggle('dragging', !animated);
+                container.style.left = left + 'px';
+                container.style.top = top + 'px';
+                container.style.right = 'auto';
+                container.style.bottom = 'auto';
+            }
+
+            function savePlayerPosition() {
+                const rect = container.getBoundingClientRect();
+                const leftFrac = rect.left / window.innerWidth;
+                const topFrac = rect.top / window.innerHeight;
+                try { localStorage.setItem('geochat_player_pos', JSON.stringify({ leftFrac, topFrac })); } catch (e) {}
+            }
+
+            window.restorePlayerPosition = function() {
+                try {
+                    const saved = JSON.parse(localStorage.getItem('geochat_player_pos') || 'null');
+                    if (!saved) return;
+                    applyPosition(saved.leftFrac * window.innerWidth, saved.topFrac * window.innerHeight, true);
+                } catch (e) {}
+            };
+
+            // Torna qualquer "alça" (o balão fechado ou o cabeçalho do painel aberto) arrastável.
+            // onTap roda quando foi um toque/clique real (sem arrastar); ignora cliques em
+            // elementos filhos interativos da própria alça (ex: o botão ✕ do cabeçalho).
+            function makeDraggable(handleEl, onTap) {
+                let dragging = false, moved = false;
+                let startX = 0, startY = 0, startLeft = 0, startTop = 0;
+                let pointerId = null;
+
+                handleEl.addEventListener('pointerdown', (e) => {
+                    const interactive = e.target.closest('button, input, a');
+                    if (interactive && interactive !== handleEl) return; // ignora só controles internos (ex: botão ✕), não a própria alça
+                    dragging = true; moved = false; pointerId = e.pointerId;
+                    lockToPixelPosition();
+                    const rect = container.getBoundingClientRect();
+                    startX = e.clientX; startY = e.clientY;
+                    startLeft = rect.left; startTop = rect.top;
+                    container.classList.add('dragging');
+                    handleEl.setPointerCapture(e.pointerId);
+                });
+
+                handleEl.addEventListener('pointermove', (e) => {
+                    if (!dragging || e.pointerId !== pointerId) return;
+                    const dx = e.clientX - startX, dy = e.clientY - startY;
+                    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true;
+                    if (!moved) return;
+                    applyPosition(startLeft + dx, startTop + dy, false);
+                });
+
+                function endDrag(e) {
+                    if (!dragging || (e && e.pointerId !== pointerId)) return;
+                    dragging = false;
+                    container.classList.remove('dragging');
+                    if (moved) savePlayerPosition();
+                    else if (onTap) onTap();
+                }
+                handleEl.addEventListener('pointerup', endDrag);
+                handleEl.addEventListener('pointercancel', endDrag);
+            }
+
+            makeDraggable(bubbleHandle, toggleMusicPanel);
+            makeDraggable(panelHandle, null);
+
+            window.addEventListener('resize', () => {
+                if (container.style.left && container.style.left !== '') applyPosition(parseFloat(container.style.left), parseFloat(container.style.top), true);
+            });
+        })();
+
+        function selectTrack(index) {
+            if (index < 0 || index >= musicPlaylist.length) return;
+            musicCurrentIndex = index;
+            playCurrentTrack();
+        }
+
+        function playCurrentTrack() {
+            const track = musicPlaylist[musicCurrentIndex];
+            if (!track) return;
+            ensureMusicContext();
+            if (musicAudioCtx.state === 'suspended') musicAudioCtx.resume();
+
+            if (track.type === 'file') {
+                stopGeneratedTrack();
+                fileAudioEl.src = track.url;
+                fileAudioEl.play();
+                musicIsPlaying = true;
+                document.getElementById('music-progress').max = 1000;
+            } else {
+                fileAudioEl.pause();
+                startGeneratedTrack(track.config);
+                document.getElementById('music-progress').value = 0;
+            }
+
+            document.getElementById('music-genre-label').innerText = track.genre;
+            document.getElementById('music-track-name').innerText = track.name;
+            document.getElementById('music-emoji').innerText = track.emoji || '🎵';
+            document.getElementById('music-time-total').innerText = track.type === 'file' ? '--:--' : '∞';
+            document.getElementById('music-bubble-icon').classList.add('spinning');
+            document.getElementById('music-playpause-btn').innerText = '⏸️';
+            renderMusicPlaylist();
+            startEqLoop();
+        }
+
+        function togglePlayPause() {
+            if (musicCurrentIndex === -1) { selectTrack(0); return; }
+            const track = musicPlaylist[musicCurrentIndex];
+            if (musicIsPlaying) {
+                musicIsPlaying = false;
+                if (track.type === 'file') fileAudioEl.pause(); else stopGeneratedTrack();
+                document.getElementById('music-bubble-icon').classList.remove('spinning');
+                document.getElementById('music-playpause-btn').innerText = '▶️';
+            } else {
+                musicIsPlaying = true;
+                if (track.type === 'file') fileAudioEl.play(); else startGeneratedTrack(track.config);
+                document.getElementById('music-bubble-icon').classList.add('spinning');
+                document.getElementById('music-playpause-btn').innerText = '⏸️';
+                startEqLoop();
+            }
+        }
+
+        function nextTrack() {
+            if (!musicPlaylist.length) return;
+            let idx;
+            if (musicShuffle) { do { idx = Math.floor(Math.random() * musicPlaylist.length); } while (idx === musicCurrentIndex && musicPlaylist.length > 1); }
+            else idx = (musicCurrentIndex + 1) % musicPlaylist.length;
+            selectTrack(idx);
+        }
+        function prevTrack() {
+            if (!musicPlaylist.length) return;
+            const idx = (musicCurrentIndex - 1 + musicPlaylist.length) % musicPlaylist.length;
+            selectTrack(idx);
+        }
+        function handleTrackEnded() {
+            if (musicRepeat === 'one') { playCurrentTrack(); return; }
+            if (musicRepeat === 'off' && musicCurrentIndex === musicPlaylist.length - 1) { musicIsPlaying = false; return; }
+            nextTrack();
+        }
+        function toggleShuffle() {
+            musicShuffle = !musicShuffle;
+            document.getElementById('music-shuffle-btn').style.color = musicShuffle ? 'var(--app-accent)' : '';
+        }
+        function toggleRepeat() {
+            musicRepeat = musicRepeat === 'off' ? 'all' : musicRepeat === 'all' ? 'one' : 'off';
+            const btn = document.getElementById('music-repeat-btn');
+            btn.innerText = musicRepeat === 'one' ? '🔂' : '🔁';
+            btn.style.color = musicRepeat === 'off' ? '' : 'var(--app-accent)';
+        }
+        function setMusicVolume(v) {
+            ensureMusicContext();
+            musicMasterGain.gain.value = v;
+            try { localStorage.setItem('geochat_music_vol', v); } catch(e) {}
+        }
+        function seekMusic(val) {
+            const track = musicPlaylist[musicCurrentIndex];
+            if (track && track.type === 'file' && fileAudioEl.duration) {
+                fileAudioEl.currentTime = (val / 1000) * fileAudioEl.duration;
+            }
+        }
+        function updateProgressUI() {
+            const track = musicPlaylist[musicCurrentIndex];
+            if (!track || track.type !== 'file') return;
+            const cur = fileAudioEl.currentTime || 0, dur = fileAudioEl.duration || 0;
+            document.getElementById('music-progress').value = dur ? (cur / dur) * 1000 : 0;
+            document.getElementById('music-time-cur').innerText = fmtTime(cur);
+            document.getElementById('music-time-total').innerText = dur ? fmtTime(dur) : '--:--';
+        }
+        function fmtTime(s) { const m = Math.floor(s / 60), r = Math.floor(s % 60); return `${m}:${r.toString().padStart(2, '0')}`; }
+
+        function handleMusicUpload(e) {
+            const files = Array.from(e.target.files || []);
+            if (!files.length) return;
+            files.forEach(file => {
+                const url = URL.createObjectURL(file);
+                musicPlaylist.push({ type: 'file', id: 'f' + Date.now() + Math.random(), name: file.name.replace(/\.[^/.]+$/, ''), genre: 'Minhas Músicas', emoji: '💿', url });
+            });
+            renderMusicPlaylist();
+            e.target.value = '';
+        }
+
+        function startEqLoop() {
+            if (eqRafId) return;
+            const bars = document.querySelectorAll('#music-eq .music-bar');
+            const data = new Uint8Array(32);
+            function loop() {
+                if (!musicIsPlaying || document.getElementById('music-panel').classList.contains('hidden')) { eqRafId = null; bars.forEach(b => b.style.height = '6px'); return; }
+                musicAnalyser.getByteFrequencyData(data);
+                bars.forEach((b, i) => {
+                    const v = data[i * 4] || 0;
+                    b.style.height = Math.max(6, (v / 255) * 34) + 'px';
+                });
+                eqRafId = requestAnimationFrame(loop);
+            }
+            loop();
+        }
+    </script>
+
+    <script>
+        // ===================================================================
+        // CHAMADA DE VOZ (1:1 e EM GRUPO) + MODO CINEMA — WebRTC
+        // Sinalização via MQTT (mesmo canal do chat). Cada par de participantes
+        // tem sua própria conexão P2P (malha/"mesh"), usando o padrão de
+        // "negociação perfeita": qualquer lado pode renegociar a qualquer
+        // momento (é isso que faz o vídeo do Cinema aparecer para o outro
+        // lado — ao adicionar faixas no meio da chamada, o navegador dispara
+        // 'negotiationneeded' e enviamos uma nova oferta SDP ao par).
+        //
+        // Limitações honestas: sem servidor TURN a conexão é P2P direta (pode
+        // falhar em NATs restritos) e a malha escala bem só para grupos
+        // pequenos (até ~5 pessoas).
+        // ===================================================================
+
+        const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }];
+        const CALL_SIGNALS = ['call-invite','call-join','call-sdp','call-ice','call-leave','call-decline','cinema-start','cinema-end'];
+
+        let inCall = false;
+        let currentCallId = null;
+        let isGroupCall = false;
+        let callContextId = null;          // id do usuário (1:1) ou do grupo
+        let expectedMembers = new Set();   // ids que devem estar na chamada (sem mim)
+        const peers = new Map();           // peerId -> estado da conexão
+        let localMicStream = null;
+        let incomingInvite = null;
+        let iAmCinemaSharer = false;
+        let cinemaLocalStream = null;
+        let callTimerInterval = null;
+        let callStartTime = 0;
+
+        function sendSignal(peerId, type, data = {}) {
+            client.publish(`${APP_TOPIC}/msg/${peerId}`, JSON.stringify({ type, senderId: myProfile.id, senderName: myProfile.name, callId: currentCallId, ...data }));
+        }
+        function broadcastSignal(type, data = {}) { peers.forEach((_, id) => sendSignal(id, type, data)); }
+        function peerDisplay(id) { const u = users.get(id); return u ? u : { name: 'Participante', avatar: '' }; }
+
+        async function getMic() {
+            if (localMicStream) return localMicStream;
+            try { localMicStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+            catch (e) { localMicStream = null; }
+            return localMicStream;
+        }
+
+        // ---------- Conexão com cada par ----------
+        function ensurePeer(peerId) {
+            if (peers.has(peerId)) return peers.get(peerId);
+            const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+            const peer = { id: peerId, pc, polite: myProfile.id > peerId, makingOffer: false, ignoreOffer: false,
+                           pendingIce: [], cinemaStreamId: null, cinemaSenders: [], audioEl: null };
+            peers.set(peerId, peer);
+
+            // <audio> dedicado para a voz deste participante
+            const audioEl = document.createElement('audio');
+            audioEl.autoplay = true; audioEl.playsInline = true;
+            document.getElementById('call-audio-sinks').appendChild(audioEl);
+            peer.audioEl = audioEl;
+
+            // Nossa voz (ou, sem microfone, apenas receber)
+            if (localMicStream) localMicStream.getTracks().forEach(t => pc.addTrack(t, localMicStream));
+            else pc.addTransceiver('audio', { direction: 'recvonly' });
+
+            // Se já estou transmitindo um vídeo, o novo participante também recebe
+            if (iAmCinemaSharer && cinemaLocalStream) {
+                sendSignal(peerId, 'cinema-start', { streamId: cinemaLocalStream.id });
+                cinemaLocalStream.getTracks().forEach(t => peer.cinemaSenders.push(pc.addTrack(t, cinemaLocalStream)));
+            }
+
+            pc.onicecandidate = (e) => { if (e.candidate) sendSignal(peerId, 'call-ice', { candidate: e.candidate }); };
+
+            pc.onnegotiationneeded = async () => {
+                try {
+                    peer.makingOffer = true;
+                    await pc.setLocalDescription(await pc.createOffer());
+                    sendSignal(peerId, 'call-sdp', { description: pc.localDescription });
+                } catch (err) { console.error('negotiation error', err); }
+                finally { peer.makingOffer = false; }
+            };
+
+            pc.ontrack = (e) => {
+                const stream = e.streams[0] || new MediaStream([e.track]);
+                const isCinema = e.track.kind === 'video' || stream.id === peer.cinemaStreamId;
+                if (isCinema) {
+                    peer.cinemaStreamId = stream.id;
+                    showRemoteCinema(peerId, stream);
+                } else {
+                    peer.audioEl.srcObject = stream;
+                    peer.audioEl.play().catch(() => {});
+                }
+            };
+
+            pc.onconnectionstatechange = () => {
+                if (pc.connectionState === 'connected') { updateCallBar(); if (!callTimerInterval) startCallTimer(); }
+                if (['failed', 'closed'].includes(pc.connectionState)) removePeer(peerId);
+            };
+            updateCallBar();
+            return peer;
+        }
+
+        function removePeer(peerId) {
+            const peer = peers.get(peerId);
+            if (!peer) return;
+            try { peer.pc.close(); } catch (e) {}
+            if (peer.audioEl) peer.audioEl.remove();
+            peers.delete(peerId);
+            if (peer.cinemaStreamId && !iAmCinemaSharer) closeCinemaView();
+            if (inCall && !isGroupCall && peers.size === 0) resetCallState();
+            else updateCallBar();
+        }
+
+        // ---------- Iniciar / convidar ----------
+        async function startVoiceCall() {
+            if (inCall) return alert('Você já está em uma chamada.');
+            if (!activeChatId) return;
+            const group = groups[activeChatId];
+            const members = group ? group.members.filter(m => m !== myProfile.id) : [activeChatId];
+            if (!members.length) return alert('Não há outros participantes.');
+
+            await getMic();
+            inCall = true; isGroupCall = !!group; callContextId = activeChatId;
+            currentCallId = 'call_' + Date.now();
+            expectedMembers = new Set(members);
+
+            const label = group ? group.name : peerDisplay(activeChatId).name;
+            const avatar = group ? group.avatar : peerDisplay(activeChatId).avatar;
+            showCallBar(label, avatar, 'Chamando...');
+
+            members.forEach(m => sendSignal(m, 'call-invite', {
+                isGroup: !!group, groupName: group ? group.name : null, members: group ? group.members : null,
+                callerAvatar: myProfile.avatar
+            }));
+        }
+
+        function handleInvite(msg) {
+            if (inCall || incomingInvite) { sendSignal(msg.senderId, 'call-decline', {}); return; }
+            incomingInvite = msg;
+            document.getElementById('incoming-call-name').innerText = msg.isGroup ? `${msg.senderName} • ${msg.groupName}` : (msg.senderName || 'Alguém');
+            document.getElementById('incoming-call-avatar').src = msg.callerAvatar || '';
+            const b = document.getElementById('incoming-call-banner');
+            b.classList.remove('hidden'); b.classList.add('flex');
+        }
+
+        async function answerCall() {
+            const msg = incomingInvite; incomingInvite = null;
+            const b = document.getElementById('incoming-call-banner'); b.classList.add('hidden'); b.classList.remove('flex');
+            if (!msg) return;
+            await getMic();
+            inCall = true; isGroupCall = !!msg.isGroup; currentCallId = msg.callId;
+            callContextId = msg.isGroup ? (Object.keys(groups).find(id => groups[id].name === msg.groupName) || msg.senderId) : msg.senderId;
+            expectedMembers = new Set((msg.isGroup ? msg.members : [msg.senderId]).filter(id => id !== myProfile.id));
+            expectedMembers.add(msg.senderId);
+
+            const label = msg.isGroup ? msg.groupName : (peerDisplay(msg.senderId).name || msg.senderName);
+            showCallBar(label, msg.isGroup ? '' : (peerDisplay(msg.senderId).avatar || msg.callerAvatar), '00:00');
+            startCallTimer();
+            // Avisa todos que entrei — quem já está na chamada abre a conexão comigo
+            expectedMembers.forEach(id => sendSignal(id, 'call-join', {}));
+        }
+
+        function rejectCall() {
+            const msg = incomingInvite; incomingInvite = null;
+            const b = document.getElementById('incoming-call-banner'); b.classList.add('hidden'); b.classList.remove('flex');
+            if (msg) sendSignal(msg.senderId, 'call-decline', {});
+        }
+
+        // ---------- Sinalização recebida ----------
+        async function handleCallSignal(msg) {
+            const from = msg.senderId;
+            switch (msg.type) {
+                case 'call-invite': return handleInvite(msg);
+                case 'call-decline':
+                    if (inCall && msg.callId === currentCallId) {
+                        expectedMembers.delete(from);
+                        if (!isGroupCall && peers.size === 0) { resetCallState(); }
+                    }
+                    return;
+                case 'call-join':
+                    if (!inCall || msg.callId !== currentCallId) return;
+                    expectedMembers.add(from);
+                    ensurePeer(from);           // adiciona faixas → dispara negotiationneeded → oferta
+                    if (!callTimerInterval) startCallTimer();
+                    return;
+                case 'call-sdp': {
+                    if (!inCall || msg.callId !== currentCallId) return;
+                    const peer = ensurePeer(from), pc = peer.pc, desc = msg.description;
+                    const collision = desc.type === 'offer' && (peer.makingOffer || pc.signalingState !== 'stable');
+                    peer.ignoreOffer = !peer.polite && collision;
+                    if (peer.ignoreOffer) return;
+                    try {
+                        await pc.setRemoteDescription(desc);
+                        for (const c of peer.pendingIce) { try { await pc.addIceCandidate(c); } catch (e) {} }
+                        peer.pendingIce = [];
+                        if (desc.type === 'offer') {
+                            await pc.setLocalDescription(await pc.createAnswer());
+                            sendSignal(from, 'call-sdp', { description: pc.localDescription });
+                        }
+                    } catch (err) { console.error('sdp error', err); }
+                    return;
+                }
+                case 'call-ice': {
+                    if (!inCall || msg.callId !== currentCallId) return;
+                    const peer = peers.get(from); if (!peer) return;
+                    if (peer.pc.remoteDescription) { try { await peer.pc.addIceCandidate(msg.candidate); } catch (e) { if (!peer.ignoreOffer) console.warn(e); } }
+                    else peer.pendingIce.push(msg.candidate);
+                    return;
+                }
+                case 'call-leave':
+                    if (msg.callId === currentCallId) removePeer(from);
+                    return;
+                case 'cinema-start': {
+                    if (!inCall || msg.callId !== currentCallId) return;
+                    const peer = ensurePeer(from);
+                    peer.cinemaStreamId = msg.streamId;
+                    document.getElementById('cinema-status').innerText = (msg.senderName || 'Alguém') + ' iniciou o Modo Cinema...';
+                    return;
+                }
+                case 'cinema-end': {
+                    if (msg.callId !== currentCallId) return;
+                    const peer = peers.get(from); if (peer) peer.cinemaStreamId = null;
+                    if (!iAmCinemaSharer) closeCinemaView(true);
+                    return;
+                }
+            }
+        }
+
+        function endCall() {
+            if (inCall) { peers.forEach((_, id) => sendSignal(id, 'call-leave', {})); expectedMembers.forEach(id => { if (!peers.has(id)) sendSignal(id, 'call-leave', {}); }); }
+            resetCallState();
+        }
+
+        function resetCallState() {
+            peers.forEach(p => { try { p.pc.close(); } catch (e) {} if (p.audioEl) p.audioEl.remove(); });
+            peers.clear();
+            if (localMicStream) { localMicStream.getTracks().forEach(t => t.stop()); localMicStream = null; }
+            if (cinemaLocalStream) { cinemaLocalStream.getTracks().forEach(t => t.stop()); cinemaLocalStream = null; }
+            inCall = false; currentCallId = null; isGroupCall = false; callContextId = null;
+            expectedMembers = new Set(); iAmCinemaSharer = false; incomingInvite = null;
+            clearInterval(callTimerInterval); callTimerInterval = null;
+            const bar = document.getElementById('active-call-bar'); bar.classList.add('hidden'); bar.classList.remove('flex');
+            closeCinemaView(true);
+            const v = document.getElementById('cinema-video'); v.srcObject = null; v.pause(); v.removeAttribute('src'); v.load();
+        }
+
+        // ---------- UI da chamada ----------
+        function showCallBar(name, avatar, statusText) {
+            document.getElementById('call-peer-name').innerText = name || 'Chamada';
+            document.getElementById('call-peer-avatar').src = avatar || `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(name || 'call')}`;
+            document.getElementById('call-timer').innerText = statusText || '00:00';
+            const bar = document.getElementById('active-call-bar'); bar.classList.remove('hidden'); bar.classList.add('flex');
+        }
+        function updateCallBar() {
+            if (!inCall) return;
+            const el = document.getElementById('call-timer');
+            if (callTimerInterval) return; // o timer já mostra o tempo
+            el.innerText = peers.size ? 'Conectando...' : 'Chamando...';
+        }
+        function startCallTimer() {
+            if (callTimerInterval) return;
+            callStartTime = Date.now();
+            callTimerInterval = setInterval(() => {
+                const s = Math.floor((Date.now() - callStartTime) / 1000);
+                const n = peers.size + 1;
+                document.getElementById('call-timer').innerText = `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}${isGroupCall ? ' • ' + n + ' 👥' : ''}`;
+            }, 1000);
+        }
+        function toggleMute() {
+            if (!localMicStream) return;
+            const track = localMicStream.getAudioTracks()[0]; if (!track) return;
+            track.enabled = !track.enabled;
+            document.getElementById('call-mute-btn').innerText = track.enabled ? '🎤' : '🔇';
+        }
+
+        // ---------- Modo Cinema ----------
+        function openCinemaView(isSender) {
+            document.getElementById('cinema-sender-controls').classList.toggle('hidden', !isSender);
+            document.getElementById('cinema-sender-controls').classList.toggle('flex', isSender);
+            const modal = document.getElementById('cinema-modal');
+            modal.classList.remove('hidden'); modal.classList.add('flex');
+            requestAnimationFrame(() => requestAnimationFrame(() => modal.classList.add('is-open')));
+        }
+        function closeCinemaView(clearVideo) {
+            const modal = document.getElementById('cinema-modal');
+            modal.classList.remove('is-open');
+            setTimeout(() => { if (!modal.classList.contains('is-open')) { modal.classList.add('hidden'); modal.classList.remove('flex'); } }, 220);
+            if (clearVideo && !iAmCinemaSharer) { const v = document.getElementById('cinema-video'); v.srcObject = null; }
+        }
+
+        // Quem ASSISTE: exibe o vídeo recebido do par
+        function showRemoteCinema(peerId, stream) {
+            if (iAmCinemaSharer) return;
+            const v = document.getElementById('cinema-video');
+            if (v.srcObject !== stream) v.srcObject = stream;
+            document.getElementById('cinema-status').innerText = 'Assistindo com ' + peerDisplay(peerId).name;
+            openCinemaView(false);
+            v.muted = false;
+            v.play().catch(() => {
+                v.muted = true; v.play().catch(() => {});
+                document.getElementById('cinema-status').innerText = 'Toque no vídeo e ative o som 🔊';
+            });
+        }
+
+        // Quem COMPARTILHA: escolhe o vídeo do próprio dispositivo
+        async function startCinemaShare(inputEl) {
+            const file = inputEl.files[0]; inputEl.value = '';
+            if (!file) return;
+            if (!inCall || peers.size === 0) return alert('Aguarde alguém entrar na chamada antes de iniciar o Modo Cinema.');
+            if (iAmCinemaSharer) stopCinemaShare();
+
+            const video = document.getElementById('cinema-video');
+            video.srcObject = null;
+            video.src = URL.createObjectURL(file);
+            video.muted = false;
+            iAmCinemaSharer = true;
+            document.getElementById('cinema-status').innerText = 'Você está transmitindo';
+            openCinemaView(true);
+
+            const begin = async () => {
+                try { await video.play(); } catch (e) {}
+                const stream = video.captureStream ? video.captureStream() : (video.mozCaptureStream ? video.mozCaptureStream() : null);
+                if (!stream) { alert('Seu navegador não suporta transmitir vídeo (captureStream). Use Chrome, Edge ou Firefox.'); stopCinemaShare(); return; }
+                cinemaLocalStream = stream;
+                broadcastSignal('cinema-start', { streamId: stream.id });
+                const addAll = (track) => peers.forEach(p => p.cinemaSenders.push(p.pc.addTrack(track, stream)));
+                stream.getTracks().forEach(addAll);
+                stream.addEventListener('addtrack', (e) => addAll(e.track)); // faixa de áudio que aparece depois
+            };
+            if (video.readyState >= 1) begin(); else video.onloadedmetadata = begin;
+        }
+
+        function stopCinemaShare() {
+            peers.forEach(p => { p.cinemaSenders.forEach(s => { try { p.pc.removeTrack(s); } catch (e) {} }); p.cinemaSenders = []; });
+            if (cinemaLocalStream) { cinemaLocalStream.getTracks().forEach(t => t.stop()); cinemaLocalStream = null; }
+            const was = iAmCinemaSharer; iAmCinemaSharer = false;
+            if (was) broadcastSignal('cinema-end', {});
+            closeCinemaView(true);
+            const v = document.getElementById('cinema-video'); v.pause(); v.removeAttribute('src'); v.srcObject = null; v.load();
+        }
+    </script>
+</body>
+</html>
